@@ -1,0 +1,12 @@
+*/__pycache__/
+/note.md
+/temp/
+/data/
+
+.venv/
+env/
+
+.idea/
+.vscode/
+*.swp
+*.swo
