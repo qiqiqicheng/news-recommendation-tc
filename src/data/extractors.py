@@ -165,14 +165,6 @@ class ItemFeatureExtractor:
 
     @staticmethod
     def get_item_topk_click(click_df: pd.DataFrame, k: int = 50) -> List[int]:
-        """
-        Args:
-            click_df
-            k
-
-        Returns:
-            list[int]
-        """
         topk_click = click_df["click_article_id"].value_counts().index[:k].tolist()
         return topk_click
 

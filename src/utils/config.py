@@ -7,6 +7,7 @@ class RecallConfig:
     # path settings
     data_path: str = "../data/raw/"
     save_path: str = "../temp/"
+    recall_path: str = save_path + "all_recall_results.pkl"
 
     # sampling and debug
     debug_mode: bool = False
@@ -24,7 +25,7 @@ class RecallConfig:
 
     # Embedding
     embedding_topk: int = 50
-    embedding_dim: Optional[int] = None
+    embedding_dim: int = 64
 
     # YoutubeDNN
     youtubednn_seq_max_len: int = 30
@@ -34,6 +35,11 @@ class RecallConfig:
     youtubednn_epochs: int = 1
     youtubednn_batch_size: int = 256
     youtubednn_learning_rate: float = 0.001
+    
+    # features
+    neg_sample_rate: float = 0.001
+    min_sample_size: int = 10  # minimum number of samples for each user in negative sampling
+    last_N: int = 3  # last N items in user behavior sequence as features
 
     def __post_init__(self):
         """Post initialization to set default values for mutable types"""

@@ -14,7 +14,7 @@ from src.data.extractors import (
 from src.similarity import ItemCFSimilarity, UserCFSimilarity, EmbeddingSimilarity
 from src.recall import ItemCFRecaller, UserCFRecaller, RecallFusion, YoutubeDNNRecaller
 
-class RecallPipeLine:
+class RecallPipeline:
     def __init__(self, config):
         self.config = config
     
@@ -129,7 +129,7 @@ class RecallPipeLine:
             
             if save:
                 PersistenceManager.save_pickle(
-                    self.recall_results, os.path.join(self.config.save_path, "all_recall_results.pkl")
+                    self.recall_results, self.config.save_path + "all_recall_methods_results.pkl"
                 )
                 
             
@@ -142,16 +142,19 @@ class RecallPipeLine:
 
         if save:
             PersistenceManager.save_pickle(
-                self.fused_results, os.path.join(self.config.save_path, "fused_recall_results.pkl")
+                self.fused_results, self.config.recall_path
             )
             
         print("recall fusion done")
         
         return self.fused_results
             
-            
-        
-
+if __name__ == "__main__":
+    config = RecallConfig()
+    pipeline = RecallPipeline(config)
+    pipeline.load()
+    pipeline.calculate_similarity()
+    fused_results = pipeline.fusion_recall()
         
 
         
