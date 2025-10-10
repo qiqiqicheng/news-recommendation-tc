@@ -1,3 +1,17 @@
+"""
+YoutubeDNN Cross-Validation Example
+====================================
+
+This example demonstrates:
+1. How to use the optimized YoutubeDNN recaller with efficient padding
+2. How to configure hyperparameters through RecallConfig
+3. How to perform cross-validation for hyperparameter tuning
+4. How to use reverse mappings for faster lookup
+
+Author: [Your Name]
+Date: 2025-10-06
+"""
+
 import sys
 
 sys.path.append("..")

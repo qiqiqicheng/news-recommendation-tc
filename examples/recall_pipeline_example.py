@@ -1,3 +1,8 @@
+"""
+Example usage of the recall module
+Demonstrates the complete recall pipeline
+"""
+
 import sys
 import os
 

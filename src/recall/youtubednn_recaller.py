@@ -9,6 +9,7 @@ from typing import Dict, List, Tuple, Optional
 from tqdm import tqdm
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import KFold
+import random
 
 from .base import BaseRecaller
 
@@ -218,8 +219,6 @@ class YoutubeDNNRecaller(BaseRecaller):
             train_set: [(user_id, hist_items, target_item, label, hist_len), ...]
             test_set: [(user_id, hist_items, target_item, label, hist_len), ...]
         """
-        import random
-
         click_df = click_df.sort_values("click_timestamp")
         item_ids = click_df["click_article_id"].unique()
 
@@ -472,175 +471,175 @@ class YoutubeDNNRecaller(BaseRecaller):
 
         return results
 
-    def train_with_cv(
-        self,
-        click_df,
-        param_grid: Optional[Dict] = None,
-        n_splits: int = 5,
-        epochs: int = 1,
-        batch_size: int = 256,
-        learning_rate: float = 0.001,
-    ) -> Dict:
-        """
-        Train with cross-validation for hyperparameter tuning
+    # def train_with_cv(
+    #     self,
+    #     click_df,
+    #     param_grid: Optional[Dict] = None,
+    #     n_splits: int = 5,
+    #     epochs: int = 1,
+    #     batch_size: int = 256,
+    #     learning_rate: float = 0.001,
+    # ) -> Dict:
+    #     """
+    #     Train with cross-validation for hyperparameter tuning
 
-        Args:
-            click_df: Click log dataframe
-            param_grid: Dictionary of parameters to search
-                Example: {
-                    'embedding_dim': [8, 16, 32],
-                    'hidden_units': [[64, 16], [128, 32], [256, 64]],
-                    'negsample': [2, 4, 8]
-                }
-            n_splits: Number of CV folds
-            epochs: Training epochs per fold
-            batch_size: Batch size
-            learning_rate: Learning rate
+    #     Args:
+    #         click_df: Click log dataframe
+    #         param_grid: Dictionary of parameters to search
+    #             Example: {
+    #                 'embedding_dim': [8, 16, 32],
+    #                 'hidden_units': [[64, 16], [128, 32], [256, 64]],
+    #                 'negsample': [2, 4, 8]
+    #             }
+    #         n_splits: Number of CV folds
+    #         epochs: Training epochs per fold
+    #         batch_size: Batch size
+    #         learning_rate: Learning rate
 
-        Returns:
-            Dictionary with best parameters and scores
-        """
-        if param_grid is None:
-            # Default parameter grid
-            param_grid = {
-                "embedding_dim": [16],
-                "hidden_units": [[64, 16]],
-                "negsample": [4],
-            }
+    #     Returns:
+    #         Dictionary with best parameters and scores
+    #     """
+    #     if param_grid is None:
+    #         # Default parameter grid
+    #         param_grid = {
+    #             "embedding_dim": [16],
+    #             "hidden_units": [[64, 16]],
+    #             "negsample": [4],
+    #         }
 
-        print(f"Cross-validation with {n_splits} folds...")
+    #     print(f"Cross-validation with {n_splits} folds...")
 
-        # Generate parameter combinations
-        import itertools
+    #     # Generate parameter combinations
+    #     import itertools
 
-        param_names = list(param_grid.keys())
-        param_values = list(param_grid.values())
-        param_combinations = list(itertools.product(*param_values))
+    #     param_names = list(param_grid.keys())
+    #     param_values = list(param_grid.values())
+    #     param_combinations = list(itertools.product(*param_values))
 
-        best_score = -np.inf
-        best_params = None
-        cv_results = []
+    #     best_score = -np.inf
+    #     best_params = None
+    #     cv_results = []
 
-        for param_combo in param_combinations:
-            params = dict(zip(param_names, param_combo))
-            print(f"\nTesting parameters: {params}")
+    #     for param_combo in param_combinations:
+    #         params = dict(zip(param_names, param_combo))
+    #         print(f"\nTesting parameters: {params}")
 
-            # Update model parameters
-            if "embedding_dim" in params:
-                self.embedding_dim = params["embedding_dim"]
-            if "hidden_units" in params:
-                self.hidden_units = params["hidden_units"]
-            if "negsample" in params:
-                self.negsample = params["negsample"]
+    #         # Update model parameters
+    #         if "embedding_dim" in params:
+    #             self.embedding_dim = params["embedding_dim"]
+    #         if "hidden_units" in params:
+    #             self.hidden_units = params["hidden_units"]
+    #         if "negsample" in params:
+    #             self.negsample = params["negsample"]
 
-            # K-Fold cross-validation
-            kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-            fold_scores = []
+    #         # K-Fold cross-validation
+    #         kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    #         fold_scores = []
 
-            users = click_df["user_id"].unique()
+    #         users = click_df["user_id"].unique()
 
-            for fold_idx, (train_idx, val_idx) in enumerate(kf.split(users)):
-                print(f"  Fold {fold_idx + 1}/{n_splits}")
+    #         for fold_idx, (train_idx, val_idx) in enumerate(kf.split(users)):
+    #             print(f"  Fold {fold_idx + 1}/{n_splits}")
 
-                train_users = users[train_idx]
-                val_users = users[val_idx]
+    #             train_users = users[train_idx]
+    #             val_users = users[val_idx]
 
-                train_fold = click_df[click_df["user_id"].isin(train_users)]
-                val_fold = click_df[click_df["user_id"].isin(val_users)]
+    #             train_fold = click_df[click_df["user_id"].isin(train_users)]
+    #             val_fold = click_df[click_df["user_id"].isin(val_users)]
 
-                # Train on this fold
-                self.train(
-                    train_fold,
-                    epochs=epochs,
-                    batch_size=batch_size,
-                    learning_rate=learning_rate,
-                )
+    #             # Train on this fold
+    #             self.train(
+    #                 train_fold,
+    #                 epochs=epochs,
+    #                 batch_size=batch_size,
+    #                 learning_rate=learning_rate,
+    #             )
 
-                # Evaluate on validation fold
-                score = self._evaluate_fold(val_fold, topk=20)
-                fold_scores.append(score)
-                print(f"    Recall@20: {score:.4f}")
+    #             # Evaluate on validation fold
+    #             score = self._evaluate_fold(val_fold, topk=20)
+    #             fold_scores.append(score)
+    #             print(f"    Recall@20: {score:.4f}")
 
-            # Average score across folds
-            avg_score = np.mean(fold_scores)
-            std_score = np.std(fold_scores)
+    #         # Average score across folds
+    #         avg_score = np.mean(fold_scores)
+    #         std_score = np.std(fold_scores)
 
-            cv_results.append(
-                {"params": params, "mean_score": avg_score, "std_score": std_score}
-            )
+    #         cv_results.append(
+    #             {"params": params, "mean_score": avg_score, "std_score": std_score}
+    #         )
 
-            print(f"  Average Recall@20: {avg_score:.4f} (+/- {std_score:.4f})")
+    #         print(f"  Average Recall@20: {avg_score:.4f} (+/- {std_score:.4f})")
 
-            # Update best parameters
-            if avg_score > best_score:
-                best_score = avg_score
-                best_params = params
+    #         # Update best parameters
+    #         if avg_score > best_score:
+    #             best_score = avg_score
+    #             best_params = params
 
-        print(f"\nBest parameters: {best_params}")
-        print(f"Best score: {best_score:.4f}")
+    #     print(f"\nBest parameters: {best_params}")
+    #     print(f"Best score: {best_score:.4f}")
 
-        # Retrain with best parameters on full dataset
-        if best_params:
-            if "embedding_dim" in best_params:
-                self.embedding_dim = best_params["embedding_dim"]
-            if "hidden_units" in best_params:
-                self.hidden_units = best_params["hidden_units"]
-            if "negsample" in best_params:
-                self.negsample = best_params["negsample"]
+    #     # Retrain with best parameters on full dataset
+    #     if best_params:
+    #         if "embedding_dim" in best_params:
+    #             self.embedding_dim = best_params["embedding_dim"]
+    #         if "hidden_units" in best_params:
+    #             self.hidden_units = best_params["hidden_units"]
+    #         if "negsample" in best_params:
+    #             self.negsample = best_params["negsample"]
 
-            print("\nRetraining with best parameters on full dataset...")
-            self.train(
-                click_df,
-                epochs=epochs,
-                batch_size=batch_size,
-                learning_rate=learning_rate,
-            )
+    #         print("\nRetraining with best parameters on full dataset...")
+    #         self.train(
+    #             click_df,
+    #             epochs=epochs,
+    #             batch_size=batch_size,
+    #             learning_rate=learning_rate,
+    #         )
 
-        return {
-            "best_params": best_params,
-            "best_score": best_score,
-            "cv_results": cv_results,
-        }
+    #     return {
+    #         "best_params": best_params,
+    #         "best_score": best_score,
+    #         "cv_results": cv_results,
+    #     }
 
-    def _evaluate_fold(self, val_df, topk: int = 20) -> float:
-        """
-        Evaluate model on validation fold
+    # def _evaluate_fold(self, val_df, topk: int = 20) -> float:
+    #     """
+    #     Evaluate model on validation fold
 
-        Args:
-            val_df: Validation dataframe
-            topk: Top-K for recall metric
+    #     Args:
+    #         val_df: Validation dataframe
+    #         topk: Top-K for recall metric
 
-        Returns:
-            Recall@K score
-        """
-        if self.model is None:
-            return 0.0
+    #     Returns:
+    #         Recall@K score
+    #     """
+    #     if self.model is None:
+    #         return 0.0
 
-        hits = 0
-        total = 0
+    #     hits = 0
+    #     total = 0
 
-        # Sample a subset of users for faster evaluation
-        sample_size = min(100, len(val_df["user_id"].unique()))
-        sample_users = np.random.choice(
-            val_df["user_id"].unique(), size=sample_size, replace=False
-        )
+    #     # Sample a subset of users for faster evaluation
+    #     sample_size = min(100, len(val_df["user_id"].unique()))
+    #     sample_users = np.random.choice(
+    #         val_df["user_id"].unique(), size=sample_size, replace=False
+    #     )
 
-        for user_id in sample_users:
-            user_data = val_df[val_df["user_id"] == user_id]
+    #     for user_id in sample_users:
+    #         user_data = val_df[val_df["user_id"] == user_id]
 
-            if len(user_data) == 0:
-                continue
+    #         if len(user_data) == 0:
+    #             continue
 
-            # Get ground truth (last clicked item)
-            ground_truth = user_data["click_article_id"].iloc[-1]
+    #         # Get ground truth (last clicked item)
+    #         ground_truth = user_data["click_article_id"].iloc[-1]
 
-            # Get recall results
-            recall_results = self.recall(user_id, topk=topk)
-            recall_items = [item_id for item_id, _ in recall_results]
+    #         # Get recall results
+    #         recall_results = self.recall(user_id, topk=topk)
+    #         recall_items = [item_id for item_id, _ in recall_results]
 
-            # Check if ground truth in recall results
-            if ground_truth in recall_items:
-                hits += 1
-            total += 1
+    #         # Check if ground truth in recall results
+    #         if ground_truth in recall_items:
+    #             hits += 1
+    #         total += 1
 
-        return hits / total if total > 0 else 0.0
+    #     return hits / total if total > 0 else 0.0

@@ -1,8 +1,3 @@
-"""
-持久化管理模块
-统一管理pickle文件的保存和加载
-"""
-
 import pickle
 import os
 from typing import Any
