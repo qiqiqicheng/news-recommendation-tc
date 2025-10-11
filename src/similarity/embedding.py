@@ -12,7 +12,7 @@ class EmbeddingSimilarity(BaseSimilarityCalculator):
         super().__init__(config)
         self.embedding_dim = config.embedding_dim
 
-    def calculate(self, item_emb_df, topk: int = 50) -> Dict:
+    def calculate(self, item_emb_df) -> Dict:
         """
         using Faiss to calculate item-item similarity based on embeddings
 
@@ -25,13 +25,18 @@ class EmbeddingSimilarity(BaseSimilarityCalculator):
         """
         print("Calculating Embedding similarity matrix with Faiss...")
 
-        # 建立索引映射
-        item_idx_2_rawid_dict = dict(zip(item_emb_df.index, item_emb_df["article_id"]))
+        topk = self.config.embedding_topk
+
+        # 重置索引以确保是连续的0, 1, 2, ...
+        item_emb_df_reset = item_emb_df.reset_index(drop=True)
+        item_idx_2_rawid_dict = dict(
+            zip(item_emb_df_reset.index, item_emb_df_reset["article_id"])
+        )
 
         # 提取embedding列
-        item_emb_cols = [col for col in item_emb_df.columns if "emb" in col]
+        item_emb_cols = [col for col in item_emb_df_reset.columns if "emb" in col]
         item_emb_np = np.ascontiguousarray(
-            item_emb_df[item_emb_cols].values, dtype=np.float32
+            item_emb_df_reset[item_emb_cols].values, dtype=np.float32
         )
 
         # 向量归一化

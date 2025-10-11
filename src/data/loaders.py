@@ -35,7 +35,7 @@ class BaseDataLoader(ABC):
 class ClickLogLoader(BaseDataLoader):
     def load(
         self, debug: bool = False, sample_size: Optional[int] = None
-    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    ):
         """
         load the click log data
 
@@ -45,18 +45,26 @@ class ClickLogLoader(BaseDataLoader):
 
         Returns:
             (training click log, testing click log)
+            or (training click log, testing click log, all user ids) if debug is True
         """
+        print("Loading click log data...")
         train_path = os.path.join(self.data_path, "train_click_log.csv")
         click_train_df = pd.read_csv(train_path)
 
         test_path = os.path.join(self.data_path, "testA_click_log.csv")
         click_test_df = pd.read_csv(test_path)
+        
+        all_user_ids = set(click_train_df["user_id"].unique()).union(
+            set(click_test_df["user_id"].unique()))
 
         if debug or self.config.debug_mode:
             if sample_size is None:
-                sample_size = self.config.debug_sample_size
-            click_train_df = self._sample_data(click_train_df, sample_size)
-            click_test_df = self._sample_data(click_test_df, sample_size)
+                sample_size = self.config.debug_user_sample_size
+            sample_user_ids = np.random.choice(
+                list(all_user_ids), size=min(sample_size, len(all_user_ids)), replace=False
+            )
+            click_train_df = click_train_df[click_train_df["user_id"].isin(sample_user_ids)]
+            click_test_df = click_test_df[click_test_df["user_id"].isin(sample_user_ids)]
 
         click_train_df = click_train_df.drop_duplicates(
             ["user_id", "click_article_id", "click_timestamp"]
@@ -64,7 +72,9 @@ class ClickLogLoader(BaseDataLoader):
         click_test_df = click_test_df.drop_duplicates(
             ["user_id", "click_article_id", "click_timestamp"]
         )
-
+        print(f"Loaded {len(click_train_df)} training click records")
+        print(f"Loaded {len(click_test_df)} testing click records")
+        
         return click_train_df, click_test_df
 
     def load_all(
@@ -96,28 +106,6 @@ class ClickLogLoader(BaseDataLoader):
 
         return all_click_df
 
-    def load_with_user_sample(
-        self, user_sample_size: int, data_sample_size: Optional[int] = None
-    ) -> pd.DataFrame:
-        """
-        sample users and load data (for quick debugging)
-
-        Args:
-            user_sample_size
-            data_sample_size
-        """
-        click_train_df, _ = self.load(debug=True, sample_size=data_sample_size)
-
-        all_user_ids = click_train_df.user_id.unique()
-
-        sample_user_ids = np.random.choice(
-            all_user_ids, size=min(user_sample_size, len(all_user_ids)), replace=False
-        )
-
-        sampled_df = click_train_df[click_train_df["user_id"].isin(sample_user_ids)]
-
-        return sampled_df
-
 
 class ArticleInfoLoader(BaseDataLoader):
     def load(
@@ -131,21 +119,47 @@ class ArticleInfoLoader(BaseDataLoader):
         Returns:
             (article meta data, article embedding data)
         """
+        print("Loading article data...")
         articles_path = os.path.join(self.data_path, "articles.csv")
         articles_df = pd.read_csv(articles_path)
 
         articles_emb_path = os.path.join(self.data_path, "articles_emb.csv")
         articles_emb_df = pd.read_csv(articles_emb_path)
 
-        if debug or self.config.debug_mode:
+        if debug:
             if sample_size is None:
                 sample_size = self.config.debug_sample_size
             articles_df = self._sample_data(articles_df, sample_size)
             articles_emb_df = self._sample_data(articles_emb_df, sample_size)
 
         articles_df = articles_df.rename(columns={"article_id": "click_article_id"})
+        # articles_emb_df = articles_emb_df.rename(
+        #     columns={"article_id": "click_article_id"}
+        # )
+        print(f"Loaded {len(articles_df)} articles")
 
         return articles_df, articles_emb_df
+
+    def load_with_user_sample(self, article_ids: list):
+        """
+        Sample users and load data (for quick debugging)
+
+        Args:
+            user_clicks_df: User click data
+            article_ids: The given article id sample
+            
+        Returns:
+            (sampled article meta data, sampled article embedding data)
+        """
+        if not self.config.debug_mode:
+            raise ValueError("This method is only for debug mode.")
+        
+        articles_df, articles_emb_df = self.load(debug=False)
+
+        sample_articles = articles_df[articles_df["click_article_id"].isin(article_ids)]
+        sample_article_embs = articles_emb_df[articles_emb_df["article_id"].isin(article_ids)]
+
+        return sample_articles, sample_article_embs
 
     def load_article_meta(
         self, debug: bool = False, sample_size: Optional[int] = None

@@ -35,6 +35,24 @@ class ItemCFRecaller(BaseRecaller):
         self.emb_i2i_sim = emb_similarity_matrix or {}
         self.weight_calc = WeightCalculator()
 
+        # Precompute top-k similar items for each item to avoid repeated sorting
+        self._precompute_topk_similar_items()
+
+    def _precompute_topk_similar_items(self):
+        """Precompute top-k similar items for each item to improve recall efficiency"""
+        print("Precomputing top-k similar items...")
+        self.topk_sim_items = {}
+        sim_item_topk = self.config.itemcf_sim_item_topk
+
+        for item_id, sim_dict in tqdm(
+            self.i2i_sim.items(), desc="Precomputing similarities"
+        ):
+            # Sort and keep only top-k
+            sorted_items = sorted(sim_dict.items(), key=lambda x: x[1], reverse=True)[
+                :sim_item_topk
+            ]
+            self.topk_sim_items[item_id] = sorted_items
+
     def recall(self, user_id: int, topk: int = 10) -> List[Tuple[int, float]]:
         """
         Recall top-k items for a user using ItemCF
@@ -59,13 +77,11 @@ class ItemCFRecaller(BaseRecaller):
         sim_item_topk = self.config.itemcf_sim_item_topk
 
         for loc, (i, click_time) in enumerate(user_hist_items):
-            if i not in self.i2i_sim:
+            if i not in self.topk_sim_items:
                 continue
 
-            # Get top-k similar items
-            similar_items = sorted(
-                self.i2i_sim[i].items(), key=lambda x: x[1], reverse=True
-            )[:sim_item_topk]
+            # Get precomputed top-k similar items
+            similar_items = self.topk_sim_items[i]
 
             for j, wij in similar_items:
                 if j in user_hist_items_set:

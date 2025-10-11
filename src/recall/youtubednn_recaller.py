@@ -10,8 +10,10 @@ from tqdm import tqdm
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import KFold
 import random
+from functools import partial
 
 from .base import BaseRecaller
+from ..utils.persistence import PersistenceManager
 
 
 class YoutubeDNNDataset(Dataset):
@@ -380,34 +382,56 @@ class YoutubeDNNRecaller(BaseRecaller):
             print(f"Epoch {epoch+1} - Avg Loss: {avg_loss:.4f}")
 
         # Extract embeddings
-        self._extract_embeddings(test_set, item_profile)
+        self._extract_embeddings(click_df, item_profile)
 
         print("Training completed!")
 
-    def _extract_embeddings(self, test_set, item_profile):
+    def _extract_embeddings(self, click_df, item_profile):
         """Extract user and item embeddings after training"""
         self.model.eval()
 
-        # Extract user embeddings
-        test_dataset = YoutubeDNNDataset(test_set)
-        from functools import partial
+        # Extract user embeddings for ALL users
+        # Group by user to get their full history
+        user_data = []
+        for user_id, hist in click_df.groupby("user_id"):
+            pos_list = hist["click_article_id"].tolist()
+            if len(pos_list) > 0:
+                user_data.append(
+                    (user_id, pos_list, 0, 0, len(pos_list))
+                )  # dummy target and label
 
-        test_collate_fn = partial(collate_fn, seq_max_len=self.seq_max_len)
-        test_loader = DataLoader(
-            test_dataset, batch_size=1024, shuffle=False, collate_fn=test_collate_fn
+        user_dataset = YoutubeDNNDataset(user_data)
+        user_collate_fn = partial(collate_fn, seq_max_len=self.seq_max_len)
+        user_loader = DataLoader(
+            user_dataset, batch_size=1024, shuffle=False, collate_fn=user_collate_fn
         )
 
-        user_embs_list = []
+        user_embs_dict = {}
         with torch.no_grad():
-            for batch in tqdm(test_loader, desc="Extracting user embeddings"):
-                user_id = batch["user_id"].to(self.device)
+            for batch in tqdm(user_loader, desc="Extracting user embeddings"):
+                user_ids = batch["user_id"].to(self.device)
                 hist_items = batch["hist_items"].to(self.device)
                 hist_len = batch["hist_len"].to(self.device)
 
-                user_emb = self.model.get_user_embedding(user_id, hist_items, hist_len)
-                user_embs_list.append(user_emb.cpu().numpy())
+                user_emb = self.model.get_user_embedding(user_ids, hist_items, hist_len)
+                user_emb_np = user_emb.cpu().numpy()
 
-        self.user_embeddings = np.vstack(user_embs_list)
+                # Store embeddings by user_id
+                for i, uid in enumerate(user_ids.cpu().numpy()):
+                    user_embs_dict[uid] = user_emb_np[i]
+
+        # Convert to array indexed by user_id
+        num_users = max(user_embs_dict.keys()) + 1
+        self.user_embeddings = np.zeros(
+            (num_users, self.embedding_dim), dtype=np.float32
+        )
+        for uid, emb in user_embs_dict.items():
+            self.user_embeddings[uid] = emb
+
+        # normalize the embedding
+        norms = np.linalg.norm(self.user_embeddings, axis=1, keepdims=True)
+        norms[norms == 0] = 1  # Avoid division by zero for users without embeddings
+        self.user_embeddings = self.user_embeddings / norms
 
         # Extract item embeddings
         item_ids = torch.tensor(
@@ -423,6 +447,10 @@ class YoutubeDNNRecaller(BaseRecaller):
                 item_embs_list.append(item_emb.cpu().numpy())
 
         self.item_embeddings = np.vstack(item_embs_list)
+        # normalize the embedding
+        self.item_embeddings = self.item_embeddings / np.linalg.norm(
+            self.item_embeddings, axis=1, keepdims=True
+        )
 
         # Build Faiss index
         print("Building Faiss index...")
@@ -444,7 +472,6 @@ class YoutubeDNNRecaller(BaseRecaller):
         if self.model is None or self.user_embeddings is None:
             raise ValueError("Model not trained. Call train() first.")
 
-        # Use reverse mapping for faster lookup
         user_idx = self.user_rawid_2_index.get(user_id, None)
 
         if user_idx is None or user_idx >= len(self.user_embeddings):
@@ -471,175 +498,36 @@ class YoutubeDNNRecaller(BaseRecaller):
 
         return results
 
-    # def train_with_cv(
-    #     self,
-    #     click_df,
-    #     param_grid: Optional[Dict] = None,
-    #     n_splits: int = 5,
-    #     epochs: int = 1,
-    #     batch_size: int = 256,
-    #     learning_rate: float = 0.001,
-    # ) -> Dict:
-    #     """
-    #     Train with cross-validation for hyperparameter tuning
+    def construct_embedding_dict(self, save: bool = True):
+        """
+        construct user and item embedding dictionaries for easy lookup
+        Returns:
+            user_emb_dict: {user_id: embedding}
+            item_emb_dict: {item_id: embedding}
+        """
+        if self.user_embeddings is None or self.item_embeddings is None:
+            raise ValueError("Embeddings not extracted. Call train() first.")
 
-    #     Args:
-    #         click_df: Click log dataframe
-    #         param_grid: Dictionary of parameters to search
-    #             Example: {
-    #                 'embedding_dim': [8, 16, 32],
-    #                 'hidden_units': [[64, 16], [128, 32], [256, 64]],
-    #                 'negsample': [2, 4, 8]
-    #             }
-    #         n_splits: Number of CV folds
-    #         epochs: Training epochs per fold
-    #         batch_size: Batch size
-    #         learning_rate: Learning rate
+        user_emb_dict = {
+            self.user_index_2_rawid[i]: self.user_embeddings[i]
+            for i in range(len(self.user_embeddings))
+        }
+        item_emb_dict = {
+            self.item_index_2_rawid[i]: self.item_embeddings[i]
+            for i in range(len(self.item_embeddings))
+        }
+        if save:
+            import os
 
-    #     Returns:
-    #         Dictionary with best parameters and scores
-    #     """
-    #     if param_grid is None:
-    #         # Default parameter grid
-    #         param_grid = {
-    #             "embedding_dim": [16],
-    #             "hidden_units": [[64, 16]],
-    #             "negsample": [4],
-    #         }
+            pm = PersistenceManager()
+            user_emb_path = os.path.join(
+                self.config.save_path, "user_youtubednn_emb.pkl"
+            )
+            item_emb_path = os.path.join(
+                self.config.save_path, "article_youtubednn_emb.pkl"
+            )
+            pm.save_pickle(user_emb_dict, user_emb_path)
+            pm.save_pickle(item_emb_dict, item_emb_path)
+            print("YoutubeDNN embedding dictionaries saved.")
 
-    #     print(f"Cross-validation with {n_splits} folds...")
-
-    #     # Generate parameter combinations
-    #     import itertools
-
-    #     param_names = list(param_grid.keys())
-    #     param_values = list(param_grid.values())
-    #     param_combinations = list(itertools.product(*param_values))
-
-    #     best_score = -np.inf
-    #     best_params = None
-    #     cv_results = []
-
-    #     for param_combo in param_combinations:
-    #         params = dict(zip(param_names, param_combo))
-    #         print(f"\nTesting parameters: {params}")
-
-    #         # Update model parameters
-    #         if "embedding_dim" in params:
-    #             self.embedding_dim = params["embedding_dim"]
-    #         if "hidden_units" in params:
-    #             self.hidden_units = params["hidden_units"]
-    #         if "negsample" in params:
-    #             self.negsample = params["negsample"]
-
-    #         # K-Fold cross-validation
-    #         kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-    #         fold_scores = []
-
-    #         users = click_df["user_id"].unique()
-
-    #         for fold_idx, (train_idx, val_idx) in enumerate(kf.split(users)):
-    #             print(f"  Fold {fold_idx + 1}/{n_splits}")
-
-    #             train_users = users[train_idx]
-    #             val_users = users[val_idx]
-
-    #             train_fold = click_df[click_df["user_id"].isin(train_users)]
-    #             val_fold = click_df[click_df["user_id"].isin(val_users)]
-
-    #             # Train on this fold
-    #             self.train(
-    #                 train_fold,
-    #                 epochs=epochs,
-    #                 batch_size=batch_size,
-    #                 learning_rate=learning_rate,
-    #             )
-
-    #             # Evaluate on validation fold
-    #             score = self._evaluate_fold(val_fold, topk=20)
-    #             fold_scores.append(score)
-    #             print(f"    Recall@20: {score:.4f}")
-
-    #         # Average score across folds
-    #         avg_score = np.mean(fold_scores)
-    #         std_score = np.std(fold_scores)
-
-    #         cv_results.append(
-    #             {"params": params, "mean_score": avg_score, "std_score": std_score}
-    #         )
-
-    #         print(f"  Average Recall@20: {avg_score:.4f} (+/- {std_score:.4f})")
-
-    #         # Update best parameters
-    #         if avg_score > best_score:
-    #             best_score = avg_score
-    #             best_params = params
-
-    #     print(f"\nBest parameters: {best_params}")
-    #     print(f"Best score: {best_score:.4f}")
-
-    #     # Retrain with best parameters on full dataset
-    #     if best_params:
-    #         if "embedding_dim" in best_params:
-    #             self.embedding_dim = best_params["embedding_dim"]
-    #         if "hidden_units" in best_params:
-    #             self.hidden_units = best_params["hidden_units"]
-    #         if "negsample" in best_params:
-    #             self.negsample = best_params["negsample"]
-
-    #         print("\nRetraining with best parameters on full dataset...")
-    #         self.train(
-    #             click_df,
-    #             epochs=epochs,
-    #             batch_size=batch_size,
-    #             learning_rate=learning_rate,
-    #         )
-
-    #     return {
-    #         "best_params": best_params,
-    #         "best_score": best_score,
-    #         "cv_results": cv_results,
-    #     }
-
-    # def _evaluate_fold(self, val_df, topk: int = 20) -> float:
-    #     """
-    #     Evaluate model on validation fold
-
-    #     Args:
-    #         val_df: Validation dataframe
-    #         topk: Top-K for recall metric
-
-    #     Returns:
-    #         Recall@K score
-    #     """
-    #     if self.model is None:
-    #         return 0.0
-
-    #     hits = 0
-    #     total = 0
-
-    #     # Sample a subset of users for faster evaluation
-    #     sample_size = min(100, len(val_df["user_id"].unique()))
-    #     sample_users = np.random.choice(
-    #         val_df["user_id"].unique(), size=sample_size, replace=False
-    #     )
-
-    #     for user_id in sample_users:
-    #         user_data = val_df[val_df["user_id"] == user_id]
-
-    #         if len(user_data) == 0:
-    #             continue
-
-    #         # Get ground truth (last clicked item)
-    #         ground_truth = user_data["click_article_id"].iloc[-1]
-
-    #         # Get recall results
-    #         recall_results = self.recall(user_id, topk=topk)
-    #         recall_items = [item_id for item_id, _ in recall_results]
-
-    #         # Check if ground truth in recall results
-    #         if ground_truth in recall_items:
-    #             hits += 1
-    #         total += 1
-
-    #     return hits / total if total > 0 else 0.0
+        return user_emb_dict, item_emb_dict
