@@ -20,7 +20,7 @@ class FeatureExtractor:
     """
     Feature extractor for news recommendation ranking stage.
 
-    Features include:
+    Basic features include:
         - user_id: user identifier
         - recall_id (article_id): article identifier from recall results
         - score: score from recall results
@@ -36,6 +36,30 @@ class FeatureExtractor:
         - avg_click_time: average click time for user
         - avg_word_count: average word count of articles clicked by user
         - recall_in_user_cat: whether recall item's category is in user's clicked categories
+
+    For DIN model, we have:
+        - user profile:
+            - user_id
+            - user_click_count
+            - user_avg_time_gap
+            - device_group
+            - avg_click_time
+            - avg_word_count
+        - item (both for recall item and history items):
+            - item_id
+            - category_id
+            - article_popularity
+            - created_at_ts
+            - words_count
+        - context:
+            - score
+            - sim_{i}, i=1,...,N
+            - time_diff_{i}, i=1,...,N
+            - word_diff_{i}, i=1,...,N
+            - sim_max, sim_mean, sim_min, sim_std
+            - item_user_sim
+            - recall_in_user_cat
+
 
     All continuous features are converted to discrete features through binning strategy
     for embedding operations in downstream ranking models.
@@ -57,6 +81,24 @@ class FeatureExtractor:
         self.binning_discretizers: Dict[str, KBinsDiscretizer] = (
             {}
         )  # store discretizers for each continuous feature
+
+        # DIN-specific feature groups
+        self.user_profile_features: List[str] = [
+            "user_id",
+            "user_click_count",
+            "user_avg_time_gap",
+            "device_group",
+            "avg_click_time",
+            "avg_word_count",
+        ]
+        self.item_features: List[str] = [
+            "recall_id",
+            "category_id",
+            "article_popularity",
+            "created_at_ts",
+            "words_count",
+        ]
+        self.context_features: List[str] = []  # will be populated dynamically
 
     def load_data(self):
         """
@@ -256,7 +298,7 @@ class FeatureExtractor:
         # neg_new = neg_user_sample.append(neg_item_sample).drop_duplicates(['user_id', 'recall_id']).reset_index(drop=True)
         neg_new = (
             pd.concat([neg_user_sample, neg_item_sample], ignore_index=True)
-            .drop_duplicates(["user_id", "recall_id"]) # type: ignore
+            .drop_duplicates(["user_id", "recall_id"])  # type: ignore
             .reset_index(drop=True)
         )
         self.train_set_df = pd.concat([pos_df, neg_new], ignore_index=True)
@@ -611,6 +653,48 @@ class FeatureExtractor:
             self.test_set_df["user_id"].map(self.user_avg_word_count_dict).fillna(0)
         )
 
+    def _add_item_features(self):
+        """
+        Add item-level features from article_info_df to both train and test sets.
+        These features include:
+        - category_id: article category
+        - created_at_ts: article creation timestamp
+        - words_count: number of words in article
+        """
+        # prepare item feature dataframe
+        item_feature_df = self.article_info_df[
+            ["article_id", "category_id", "created_at_ts", "words_count"]
+        ].copy()
+
+        # merge with train set
+        self.train_set_df = pd.merge(
+            self.train_set_df,
+            item_feature_df,
+            left_on="recall_id",
+            right_on="article_id",
+            how="left",
+        ).drop(columns=["article_id"])
+
+        # merge with test set
+        self.test_set_df = pd.merge(
+            self.test_set_df,
+            item_feature_df,
+            left_on="recall_id",
+            right_on="article_id",
+            how="left",
+        ).drop(columns=["article_id"])
+
+        # fill missing values
+        self.train_set_df["category_id"].fillna(0, inplace=True)
+        self.train_set_df["created_at_ts"].fillna(0, inplace=True)
+        self.train_set_df["words_count"].fillna(0, inplace=True)
+
+        self.test_set_df["category_id"].fillna(0, inplace=True)
+        self.test_set_df["created_at_ts"].fillna(0, inplace=True)
+        self.test_set_df["words_count"].fillna(0, inplace=True)
+
+        print("Item features added.")
+
     def _identify_feature_types(self):
         """
         Identify continuous and discrete features from the feature set.
@@ -752,6 +836,128 @@ class FeatureExtractor:
         # save feature list to config for downstream access
         self.config.features = self.all_features
 
+    def _organize_din_features(self):
+        """
+        Organize features into groups for DIN model:
+        - user_profile_features: user-level features
+        - item_features: item-level features (for both recall and history items)
+        - context_features: context-level features (interaction features)
+        """
+        # dynamically determine context features
+        # context features are those not in user_profile or item features
+        exclude_cols = {
+            "user_id",
+            "recall_id",
+            "article_id",
+            "label",
+            "click_timestamp",
+            "article_category_ids",
+            "_merge",
+        }
+
+        all_feature_cols = set(self.train_set_df.columns) - exclude_cols
+        user_profile_set = set(self.user_profile_features) - {
+            "user_id"
+        }  # keep user_id separate
+        item_feature_set = set(self.item_features) - {
+            "recall_id"
+        }  # keep recall_id separate
+
+        # context features = all features - user_profile - item_features
+        self.context_features = sorted(
+            list(
+                all_feature_cols
+                - user_profile_set
+                - item_feature_set
+                - {"user_id", "recall_id"}
+            )
+        )
+
+        print(f"User profile features: {self.user_profile_features}")
+        print(f"Item features: {self.item_features}")
+        print(f"Context features: {self.context_features}")
+
+    def _save_din_data(self, save_path: str):
+        """
+        Save DIN-specific data structures with discretized features:
+        1. train_history_dict: {user_id: [(item_id, timestamp), ...]}
+        2. test_history_dict: {user_id: [(item_id, timestamp), ...]}
+        3. user_profile_features: list of user profile feature names
+        4. item_features: list of item feature names
+        5. context_features: list of context feature names
+        6. article_info_dict: {article_id: {feature_name: discretized_value, ...}}
+
+        Note: article_info_dict contains DISCRETIZED feature values from train/test sets
+        to ensure all features used in DIN model are categorical.
+        """
+        # save history dicts (already created in _add_labels)
+        PersistenceManager.save_pickle(
+            self.train_history_dict, os.path.join(save_path, "train_history_dict.pkl")
+        )
+        PersistenceManager.save_pickle(
+            self.test_history_dict, os.path.join(save_path, "test_history_dict.pkl")
+        )
+
+        # save feature group lists
+        feature_groups = {
+            "user_profile_features": self.user_profile_features,
+            "item_features": self.item_features,
+            "context_features": self.context_features,
+        }
+        PersistenceManager.save_pickle(
+            feature_groups["user_profile_features"],
+            os.path.join(save_path, "user_profile_features.pkl"),
+        )
+        PersistenceManager.save_pickle(
+            feature_groups["item_features"],
+            os.path.join(save_path, "item_features.pkl"),
+        )
+        PersistenceManager.save_pickle(
+            feature_groups["context_features"],
+            os.path.join(save_path, "context_features.pkl"),
+        )
+
+        # create article_info_dict with DISCRETIZED features from train/test sets
+        # this ensures all features are categorical as required by DIN model
+        article_info_dict = {}
+
+        # combine train and test to get all articles with their discretized features
+        all_data = pd.concat([self.train_set_df, self.test_set_df], ignore_index=True)
+
+        # extract item features (excluding recall_id and article_popularity which is in dataframe)
+        item_feature_cols = [feat for feat in self.item_features if feat != "recall_id"]
+
+        # for each unique article, get its discretized feature values
+        for article_id in all_data["recall_id"].unique():
+            article_rows = all_data[all_data["recall_id"] == article_id]
+
+            if len(article_rows) > 0:
+                # use the first occurrence (all should be the same after discretization)
+                first_row = article_rows.iloc[0]
+                article_info_dict[article_id] = {}
+
+                for feat in item_feature_cols:
+                    if feat in first_row:
+                        # use discretized value from dataframe
+                        article_info_dict[article_id][feat] = int(first_row[feat])
+                    else:
+                        article_info_dict[article_id][feat] = 0
+
+        # also add articles from article_info_df that might not appear in train/test
+        # these will use default discretized values (0)
+        for article_id in self.article_info_df["article_id"].unique():
+            if article_id not in article_info_dict:
+                article_info_dict[article_id] = {feat: 0 for feat in item_feature_cols}
+
+        PersistenceManager.save_pickle(
+            article_info_dict, os.path.join(save_path, "article_info_dict.pkl")
+        )
+
+        print(f"DIN-specific data saved to {save_path}")
+        print(
+            f"Article info dict contains {len(article_info_dict)} articles with discretized features"
+        )
+
     def extract_features(self, save: bool = True):
         """
         Extract all features step by step, including:
@@ -761,10 +967,13 @@ class FeatureExtractor:
         4. Extract user activate degree features
         5. Extract article popularity features
         6. Extract user habits features
-        7. Perform negative sampling
-        8. Identify feature types (continuous vs discrete)
-        9. Apply binning to convert continuous features to discrete
-        10. Build feature list for downstream use
+        7. Add item features (category, created_at_ts, words_count)
+        8. Perform negative sampling
+        9. Identify feature types (continuous vs discrete)
+        10. Apply binning to convert continuous features to discrete
+        11. Build feature list for downstream use
+        12. Organize DIN-specific feature groups
+        13. Save DIN-specific data structures
         """
         print("start extracting features...")
         self._add_labels()
@@ -785,6 +994,9 @@ class FeatureExtractor:
         self._add_user_habits()
         print("user habits features added.")
 
+        self._add_item_features()
+        print("item features added.")
+
         self._negative_sampling()
         print("negative sampling done.")
 
@@ -797,21 +1009,32 @@ class FeatureExtractor:
         # build comprehensive feature list for downstream use
         self._build_feature_list()
 
+        # organize DIN-specific feature groups
+        self._organize_din_features()
+
         if save:
+            # save train and test sets
             self.train_set_df.to_csv(
-                self.config.save_path + "train_features.csv", index=False
+                os.path.join(self.config.save_path, "train_features.csv"), index=False
             )
             self.test_set_df.to_csv(
-                self.config.save_path + "test_features.csv", index=False
+                os.path.join(self.config.save_path, "test_features.csv"), index=False
             )
+            print(f"features saved to {self.config.save_path}")
+
+            # save feature list and binning discretizers
             PersistenceManager.save_pickle(
-                self.all_features, self.config.save_path + "feature_list.pkl"
+                self.all_features,
+                os.path.join(self.config.save_path, "feature_list.pkl"),
             )
-            PersistenceManager.save_pickle(
-                self.binning_discretizers,
-                self.config.save_path + "binning_discretizers.pkl",
-            )
-            
+            # PersistenceManager.save_pickle(
+            #     self.binning_discretizers,
+            #     os.path.join(self.config.save_path, "binning_discretizers.pkl"),
+            # )
+
+            # save DIN-specific data structures
+            self._save_din_data(self.config.save_path)
+
             print(f"features saved to {self.config.save_path}")
 
     def get_train_test_data(self) -> Tuple[pd.DataFrame, pd.DataFrame]:

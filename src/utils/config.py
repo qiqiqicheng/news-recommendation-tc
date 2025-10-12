@@ -88,42 +88,75 @@ class RecallConfig:
     def to_dict(self) -> dict:
         return self.__dict__
 
+
 @dataclass
 class RankConfig:
+    # general settings
     debug_mode: bool = True
     offline: bool = True
     random_seed: int = 23
-    
+
     # path settings
     _project_root: str = field(
         default_factory=lambda: str(Path(__file__).parent.parent.parent.resolve())
     )
     data_path: str = field(init=False)
     save_path: str = field(init=False)
-    recall_path: str = field(init=False)
-    
+
+    # feature paths
     train_set_path: str = field(init=False)
     test_set_path: str = field(init=False)
-    feature_list_path: str = field(init=False)
-    
-    
-    # DIN ranker
-    
-    
+
+    # DIN-specific paths
+    train_history_dict_path: str = field(init=False)
+    test_history_dict_path: str = field(init=False)
+    user_profile_features_path: str = field(init=False)
+    item_features_path: str = field(init=False)
+    context_features_path: str = field(init=False)
+    article_info_dict_path: str = field(init=False)
+
+    # DIN model hyperparameters
+    din_embedding_dim: int = 32
+    din_attention_hidden_units: List[int] = field(default_factory=lambda: [36])
+    din_mlp_hidden_units: List[int] = field(default_factory=lambda: [200, 80])
+    din_activation: str = "dice"  # "dice" or "prelu"
+    din_seq_max_len: int = 30
+
+    # training hyperparameters
+    batch_size: int = 256
+    learning_rate: float = 0.001
+    epochs: int = 10
+
     def __post_init__(self):
         """Post initialization to set absolute paths and default values"""
         self.data_path = os.path.join(self._project_root, "data", "raw")
         self.save_path = os.path.join(self._project_root, "temp")
-        self.all_recall_results_path = os.path.join(
-            self.save_path, "all_recall_results.pkl"
-        )
-        self.train_set_path = os.path.join(self.data_path, "train_features.csv")
+
+        # feature paths
+        self.train_set_path = os.path.join(self.save_path, "train_features.csv")
         self.test_set_path = os.path.join(self.save_path, "test_features.csv")
-        self.feature_list_path = os.path.join(self.save_path, "feature_list.pkl")
+
+        # DIN-specific paths
+        self.train_history_dict_path = os.path.join(
+            self.save_path, "train_history_dict.pkl"
+        )
+        self.test_history_dict_path = os.path.join(
+            self.save_path, "test_history_dict.pkl"
+        )
+        self.user_profile_features_path = os.path.join(
+            self.save_path, "user_profile_features.pkl"
+        )
+        self.item_features_path = os.path.join(self.save_path, "item_features.pkl")
+        self.context_features_path = os.path.join(
+            self.save_path, "context_features.pkl"
+        )
+        self.article_info_dict_path = os.path.join(
+            self.save_path, "article_info_dict.pkl"
+        )
 
         os.makedirs(self.data_path, exist_ok=True)
         os.makedirs(self.save_path, exist_ok=True)
-        
+
     @classmethod
     def from_dict(cls, config_dict: dict) -> "RankConfig":
         return cls(**{k: v for k, v in config_dict.items() if k in cls.__annotations__})
