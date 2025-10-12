@@ -6,7 +6,7 @@ from pathlib import Path
 
 @dataclass
 class RecallConfig:
-    # path settings (使用绝对路径,基于项目根目录)
+    # path settings
     _project_root: str = field(
         default_factory=lambda: str(Path(__file__).parent.parent.parent.resolve())
     )
@@ -41,7 +41,7 @@ class RecallConfig:
     youtubednn_batch_size: int = 256
     youtubednn_learning_rate: float = 0.001
     youtubednn_topk: int = 20
-    
+
     # fuse
     fuse_topk: int = 30
 
@@ -51,12 +51,21 @@ class RecallConfig:
         10  # minimum number of samples for each user in negative sampling
     )
     last_N: int = 3  # last N items in user behavior sequence as features
+    features: List[str] = []
+
+    enable_binning: bool = True
+    binning_strategy: str = "quantile"  # "quantile" or "uniform"
+    default_n_bins: int = 10  # default number of bins for continuous features
 
     def __post_init__(self):
         """Post initialization to set absolute paths and default values"""
         self.data_path = os.path.join(self._project_root, "data", "raw")
         self.save_path = os.path.join(self._project_root, "temp")
-        self.all_recall_results_path = os.path.join(self.save_path, "all_recall_results.pkl")
+        self.all_recall_results_path = os.path.join(
+            self.save_path, "all_recall_results.pkl"
+        )
+        self.train_set_path = os.path.join(self.data_path, "train_features.csv")
+        self.test_set_path = os.path.join(self.save_path, "test_features.pkl")
 
         os.makedirs(self.data_path, exist_ok=True)
         os.makedirs(self.save_path, exist_ok=True)
@@ -74,6 +83,49 @@ class RecallConfig:
 
     @classmethod
     def from_dict(cls, config_dict: dict) -> "RecallConfig":
+        return cls(**{k: v for k, v in config_dict.items() if k in cls.__annotations__})
+
+    def to_dict(self) -> dict:
+        return self.__dict__
+
+@dataclass
+class RankConfig:
+    debug_mode: bool = True
+    offline: bool = True
+    random_seed: int = 23
+    
+    # path settings
+    _project_root: str = field(
+        default_factory=lambda: str(Path(__file__).parent.parent.parent.resolve())
+    )
+    data_path: str = field(init=False)
+    save_path: str = field(init=False)
+    recall_path: str = field(init=False)
+    
+    train_set_path: str = field(init=False)
+    test_set_path: str = field(init=False)
+    feature_list_path: str = field(init=False)
+    
+    
+    # DIN ranker
+    
+    
+    def __post_init__(self):
+        """Post initialization to set absolute paths and default values"""
+        self.data_path = os.path.join(self._project_root, "data", "raw")
+        self.save_path = os.path.join(self._project_root, "temp")
+        self.all_recall_results_path = os.path.join(
+            self.save_path, "all_recall_results.pkl"
+        )
+        self.train_set_path = os.path.join(self.data_path, "train_features.csv")
+        self.test_set_path = os.path.join(self.save_path, "test_features.csv")
+        self.feature_list_path = os.path.join(self.save_path, "feature_list.pkl")
+
+        os.makedirs(self.data_path, exist_ok=True)
+        os.makedirs(self.save_path, exist_ok=True)
+        
+    @classmethod
+    def from_dict(cls, config_dict: dict) -> "RankConfig":
         return cls(**{k: v for k, v in config_dict.items() if k in cls.__annotations__})
 
     def to_dict(self) -> dict:
