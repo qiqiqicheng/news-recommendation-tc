@@ -834,7 +834,8 @@ class DINRanker(BaseRanker):
             total = 0
 
             for batch_idx, batch in tqdm(
-                enumerate(train_loader), desc=f"Epoch {epoch}/{self.config.epochs}", total=len(train_loader)
+                enumerate(train_loader),
+                desc=f"Epoch {epoch}/{self.config.epochs}",
             ):
                 # Move batch to device
                 batch = {
@@ -927,6 +928,9 @@ class DINRanker(BaseRanker):
         encoders_path = os.path.join(self.config.save_path, "label_encoders.pkl")
         PersistenceManager.save_pickle(self.label_encoders, encoders_path)
         print(f"Label encoders saved to: {encoders_path}")
+
+        # Save the trained model
+        self.save_model()
 
     def _save_loss_plot(self):
         """Save training loss curve plot with validation curve."""
@@ -1048,7 +1052,7 @@ class DINRanker(BaseRanker):
         all_probs = []
 
         with torch.no_grad():
-            for batch in test_loader:
+            for batch in tqdm(test_loader, desc="Predicting", total=len(test_loader)):
                 batch = {
                     k: (
                         {feat: val.to(device) for feat, val in v.items()}
@@ -1061,3 +1065,119 @@ class DINRanker(BaseRanker):
                 all_probs.extend(probs.cpu().numpy())
 
         return np.array(all_probs)
+
+    def save_model(self, save_dir: Optional[str] = None):
+        """
+        Save the trained DIN model and related metadata.
+
+        Args:
+            save_dir: Directory to save the model. If None, uses config.save_path
+
+        Saves:
+            - model.pth: Model state dict
+            - model_metadata.pkl: Model architecture parameters and feature info
+            - label_encoders.pkl: Feature encoders (already saved in train())
+        """
+        if self.model is None:
+            raise ValueError("No model to save. Train the model first.")
+
+        save_dir = save_dir or self.config.save_path
+        os.makedirs(save_dir, exist_ok=True)
+
+        # Save model state dict
+        model_path = os.path.join(save_dir, "din_model.pth")
+        torch.save(self.model.state_dict(), model_path)
+        print(f"Model state dict saved to: {model_path}")
+
+        # Save model metadata (architecture info and feature names)
+        metadata = {
+            "user_profile_features": self.user_profile_features,
+            "item_features": self.item_features,
+            "context_features": self.context_features,
+            "din_embedding_dim": self.config.din_embedding_dim,
+            "din_attention_hidden_units": self.config.din_attention_hidden_units,
+            "din_mlp_hidden_units": self.config.din_mlp_hidden_units,
+            "din_activation": self.config.din_activation,
+            "din_seq_max_len": self.config.din_seq_max_len,
+        }
+        metadata_path = os.path.join(save_dir, "din_model_metadata.pkl")
+        PersistenceManager.save_pickle(metadata, metadata_path)
+        print(f"Model metadata saved to: {metadata_path}")
+
+        print(f"\nModel saved successfully to: {save_dir}")
+        print(f"  - Model weights: din_model.pth")
+        print(f"  - Model metadata: din_model_metadata.pkl")
+        print(f"  - Label encoders: label_encoders.pkl")
+
+    def load_model(self, load_dir: Optional[str] = None):
+        """
+        Load a trained DIN model from disk.
+
+        Args:
+            load_dir: Directory to load the model from. If None, uses config.save_path
+
+        This method:
+        - Loads model metadata
+        - Reconstructs model architecture
+        - Loads trained weights
+        - Loads label encoders
+        """
+        load_dir = load_dir or self.config.save_path
+
+        print(f"Loading model from: {load_dir}")
+
+        # Load model metadata
+        metadata_path = os.path.join(load_dir, "din_model_metadata.pkl")
+        if not os.path.exists(metadata_path):
+            raise FileNotFoundError(f"Model metadata not found at: {metadata_path}")
+
+        metadata = PersistenceManager.load_pickle(metadata_path)
+        print(f"Loaded model metadata")
+
+        # Restore feature names
+        self.user_profile_features = metadata["user_profile_features"]
+        self.item_features = metadata["item_features"]
+        self.context_features = metadata["context_features"]
+
+        # Load label encoders
+        encoders_path = os.path.join(load_dir, "label_encoders.pkl")
+        if os.path.exists(encoders_path):
+            self.label_encoders = PersistenceManager.load_pickle(encoders_path)
+            print(f"Loaded label encoders ({len(self.label_encoders)} features)")
+        else:
+            print("Warning: No label encoders found")
+            self.label_encoders = {}
+
+        # Prepare vocabulary dictionaries for model reconstruction
+        user_profile_vocab, item_vocab, context_vocab = self._prepare_vocab_dicts()
+
+        # Reconstruct model architecture
+        self.model = DINModel(
+            user_profile_vocab_dict=user_profile_vocab,
+            item_vocab_dict=item_vocab,
+            context_vocab_dict=context_vocab,
+            embedding_dim=metadata["din_embedding_dim"],
+            attention_hidden_units=metadata["din_attention_hidden_units"],
+            mlp_hidden_units=metadata["din_mlp_hidden_units"],
+            activation=metadata["din_activation"],
+        )
+        print(f"Reconstructed model architecture")
+
+        # Load model weights
+        model_path = os.path.join(load_dir, "din_model.pth")
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model weights not found at: {model_path}")
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.load_state_dict(torch.load(model_path, map_location=device))
+        self.model.to(device)
+        self.model.eval()
+        print(f"Loaded model weights to device: {device}")
+
+        print(f"\nModel loaded successfully!")
+        print(f"  - Embedding dim: {metadata['din_embedding_dim']}")
+        print(f"  - Attention hidden units: {metadata['din_attention_hidden_units']}")
+        print(f"  - MLP hidden units: {metadata['din_mlp_hidden_units']}")
+        print(f"  - Sequence max length: {metadata['din_seq_max_len']}")
+
+        return self

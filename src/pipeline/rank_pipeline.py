@@ -77,21 +77,58 @@ class RankPipeline:
 
         print("\nModel training completed")
 
-    def predict(self) -> np.ndarray:
+    def load_model(self, model_dir: Optional[str] = None):
+        """
+        Load a pre-trained ranking model.
+
+        Args:
+            model_dir: Directory containing the saved model. If None, uses config.save_path
+
+        This step:
+        - Initializes ranker
+        - Loads feature data
+        - Loads pre-trained model weights and metadata
+        """
+        print("=" * 60)
+        print("STEP: Load Pre-trained Model")
+        print("=" * 60)
+
+        # Initialize ranker
+        self.ranker = DINRanker(self.config)
+
+        # Load feature data
+        self.ranker.load()
+
+        # Load pre-trained model
+        self.ranker.load_model(load_dir=model_dir)
+
+        print("\n✓ Model loaded successfully!")
+
+    def predict(
+        self, use_pretrained: bool = False, model_dir: Optional[str] = None
+    ) -> np.ndarray:
         """
         Generate ranking scores for all user-item pairs.
+
+        Args:
+            use_pretrained: If True, load pre-trained model before prediction
+            model_dir: Directory containing saved model (only used if use_pretrained=True)
 
         Returns:
             probs: Array of predicted click probabilities
 
         This step:
-        - Loads pre-trained model and encoders
+        - Loads pre-trained model (if use_pretrained=True)
         - Generates predictions for all recall results
         - Returns ranking scores
         """
+        # Load pre-trained model if requested
+        if use_pretrained:
+            self.load_model(model_dir=model_dir)
+
         if self.ranker is None:
             raise ValueError(
-                "Model is not trained yet. Please train the model before prediction."
+                "Model is not trained/loaded. Train or load the model before prediction."
             )
 
         # Generate predictions
@@ -189,6 +226,9 @@ if __name__ == "__main__":
     pipeline = RankPipeline(rank_config)
     pipeline.train()
     pipeline.predict()
-    pipeline.rank_and_recommend(top_k=10, save_path=os.path.join(rank_config.save_path, "final_recommendations.pkl"))
+    pipeline.rank_and_recommend(
+        top_k=10,
+        save_path=os.path.join(rank_config.save_path, "final_recommendations.pkl"),
+    )
 
     # python -m src.pipeline.rank_pipeline
