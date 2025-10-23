@@ -495,9 +495,6 @@ def collate_fn(batch, seq_max_len):
     labels_batch = torch.from_numpy(labels_batch)
     history_mask_batch = torch.from_numpy(history_mask_batch)
 
-    labels_batch = torch.tensor(labels_batch, dtype=torch.float32)
-    history_mask_batch = torch.tensor(history_mask_batch, dtype=torch.float32)  # (B, T)
-
     return {
         "user_profile": user_profile_batch,
         "recall_item": recall_item_batch,
@@ -683,14 +680,14 @@ class DINRanker(BaseRanker):
         self.load()
 
         # Split train/val/test data
-        # IMPORTANT: Only train and val sets have labels (from excluded last click)
+        # Only train and val sets have labels (from excluded last click)
         # Test set (testA users) has NO labels - used only for final prediction
         if "is_train" in self.main_df.columns and "is_val" in self.main_df.columns:
             train_df = self.main_df[self.main_df["is_train"] == True].copy()
             val_df = self.main_df[self.main_df["is_val"] == True].copy()
             test_df = self.main_df[self.main_df["is_test"] == True].copy()
 
-            print(f"\n=== Data Split ===")
+            print(f"\nData Split: ")
             print(f"Total samples: {len(self.main_df)}")
             print(
                 f"Train samples: {len(train_df)} ({len(train_df)/len(self.main_df)*100:.1f}%)"
@@ -716,12 +713,6 @@ class DINRanker(BaseRanker):
                     print(f"\nValidation set label distribution:")
                     print(f"  - Positive: {val_pos} ({val_pos/len(val_df)*100:.2f}%)")
                     print(f"  - Negative: {val_neg} ({val_neg/len(val_df)*100:.2f}%)")
-
-                # Note: Test set should have no valid labels
-                print(
-                    f"\nNote: Test set ({len(test_df)} samples) has NO ground truth labels"
-                )
-                print("Test set is used only for final prediction/submission")
 
             # Use train_df for training, val_df for validation
             train_data = train_df
@@ -843,7 +834,7 @@ class DINRanker(BaseRanker):
             total = 0
 
             for batch_idx, batch in tqdm(
-                enumerate(train_loader), desc=f"Epoch {epoch}/{self.config.epochs}"
+                enumerate(train_loader), desc=f"Epoch {epoch}/{self.config.epochs}", total=len(train_loader)
             ):
                 # Move batch to device
                 batch = {
@@ -938,7 +929,7 @@ class DINRanker(BaseRanker):
         print(f"Label encoders saved to: {encoders_path}")
 
     def _save_loss_plot(self):
-        """Save training loss curve plot with optional validation curve."""
+        """Save training loss curve plot with validation curve."""
         if not hasattr(self, "loss_history") or len(self.loss_history) == 0:
             print("No loss history to plot.")
             return

@@ -114,13 +114,13 @@ class FeatureExtractor:
             str(int(k)): v for k, v in self.article_created_time_dict.items()
         }
 
-        print(
-            f"""
-              CHECKPOINT:
-              article_created_time_dict created with {len(self.article_created_time_dict)} entries
-              sample (after string conversion): {list(self.article_created_time_dict.items())[:5]}
-              """
-        )
+        # print(
+        #     f"""
+        #       CHECKPOINT:
+        #       article_created_time_dict created with {len(self.article_created_time_dict)} entries
+        #       sample (after string conversion): {list(self.article_created_time_dict.items())[:5]}
+        #       """
+        # )
 
         # Create article content embedding dict
         emb_cols = [f"emb_{i}" for i in range(250)]
@@ -222,27 +222,27 @@ class FeatureExtractor:
         )
 
         # Verify data type consistency for dictionary lookups
-        if len(self.main_df) > 0:
-            sample_item = self.main_df["item_id"].iloc[0]
-            print(f"\n=== Data Type Consistency Check ===")
-            print(
-                f"Sample item_id from main_df: {sample_item} (type: {type(sample_item)})"
-            )
-            print(
-                f"Sample key from article_type_dict: {list(self.article_type_dict.keys())[0]} (type: {type(list(self.article_type_dict.keys())[0])})"
-            )
-            print(
-                f"Sample key from article_created_time_dict: {list(self.article_created_time_dict.keys())[0]} (type: {type(list(self.article_created_time_dict.keys())[0])})"
-            )
-            print(
-                f"Can lookup sample_item in article_created_time_dict: {sample_item in self.article_created_time_dict}"
-            )
-            if sample_item in self.article_created_time_dict:
-                print(f"Lookup result: {self.article_created_time_dict[sample_item]}")
-            print("=" * 50)
+        # if len(self.main_df) > 0:
+        #     sample_item = self.main_df["item_id"].iloc[0]
+        #     print(f"\n=== Data Type Consistency Check ===")
+        #     print(
+        #         f"Sample item_id from main_df: {sample_item} (type: {type(sample_item)})"
+        #     )
+        #     print(
+        #         f"Sample key from article_type_dict: {list(self.article_type_dict.keys())[0]} (type: {type(list(self.article_type_dict.keys())[0])})"
+        #     )
+        #     print(
+        #         f"Sample key from article_created_time_dict: {list(self.article_created_time_dict.keys())[0]} (type: {type(list(self.article_created_time_dict.keys())[0])})"
+        #     )
+        #     print(
+        #         f"Can lookup sample_item in article_created_time_dict: {sample_item in self.article_created_time_dict}"
+        #     )
+        #     if sample_item in self.article_created_time_dict:
+        #         print(f"Lookup result: {self.article_created_time_dict[sample_item]}")
+        #     print("=" * 50)
 
         # VALIDATION: Check for missing metadata
-        self._validate_recall_data()
+        # self._validate_recall_data()
 
     def _validate_recall_data(self):
         """
@@ -539,14 +539,14 @@ class FeatureExtractor:
                 self, "article_youtubednn_emb_dict"
             ):
                 user_emb = self.user_youtubednn_emb_dict.get(user_id_str)
-                if user_i < 3:
-                    print(
-                        f"""
-                          CHECKPOINT:
-                          user_emb for user_id {user_id_str} with shape {user_emb.shape if user_emb is not None else 'None'}
-                          sample: {user_emb[:5] if user_emb is not None else 'None'}
-                          """
-                    )
+                # if user_i < 3:
+                #     print(
+                #         f"""
+                #           CHECKPOINT:
+                #           user_emb for user_id {user_id_str} with shape {user_emb.shape if user_emb is not None else 'None'}
+                #           sample: {user_emb[:5] if user_emb is not None else 'None'}
+                #           """
+                #     )
                 if user_emb is not None:
                     # Batch lookup: use list comprehension once, avoid repeated get()
                     item_embs = np.array(
@@ -559,14 +559,14 @@ class FeatureExtractor:
                     # Vectorized dot product
                     item_user_sim[row_indices] = item_embs @ user_emb
 
-                if user_i < 3:
-                    print(
-                        f"""
-                          CHECKPOINT:
-                          item_user_sim for user_id {user_id_str} with shape {item_user_sim[row_indices].shape}
-                          sample: {item_user_sim[row_indices][:5]}
-                          """
-                    )
+                # if user_i < 3:
+                #     print(
+                #         f"""
+                #           CHECKPOINT:
+                #           item_user_sim for user_id {user_id_str} with shape {item_user_sim[row_indices].shape}
+                #           sample: {item_user_sim[row_indices][:5]}
+                #           """
+                #     )
 
             # Batch lookup recall item embeddings and metadata (optimization: single pass)
             recall_id_embs = np.array(
@@ -593,14 +593,14 @@ class FeatureExtractor:
                 dtype=np.float32,
             )  # (num_recall,)
 
-            if user_i < 3:
-                print(
-                    f"""
-                      CHECKPOINT:
-                      recall_times for user_id {user_id_str} with shape {recall_times.shape}
-                      sample: {recall_times[:5]}
-                      """
-                )
+            # if user_i < 3:
+            #     print(
+            #         f"""
+            #           CHECKPOINT:
+            #           recall_times for user_id {user_id_str} with shape {recall_times.shape}
+            #           sample: {recall_times[:5]}
+            #           """
+            #     )
 
             # Calculate similarity features for each history item
             for hist_idx, hist_item in enumerate(history):
@@ -609,14 +609,14 @@ class FeatureExtractor:
                 hist_content_emb = self.article_content_emb_dict.get(hist_item)
                 hist_time = self.article_created_time_dict.get(hist_item, np.nan)
 
-                if user_i < 3 and hist_idx < 3:
-                    print(
-                        f"""
-                        CHECKPOINT:
-                        hist_time for hist_idx {hist_idx}
-                        sample: {hist_time}
-                        """
-                    )
+                # if user_i < 3 and hist_idx < 3:
+                #     print(
+                #         f"""
+                #         CHECKPOINT:
+                #         hist_time for hist_idx {hist_idx}
+                #         sample: {hist_time}
+                #         """
+                #     )
 
                 # Vectorized similarity calculation
                 if hist_id_emb is not None:
@@ -656,14 +656,14 @@ class FeatureExtractor:
 
                 # Direct numpy array assignment (KEY: no DataFrame.loc!)
                 sim_features[row_indices, hist_idx] = sim_array
-                if user_i < 3 and hist_idx < 3:
-                    print(
-                        f"""
-                          CHECKPOINT:
-                          time_diff_array for hist_idx {hist_idx} with shape {time_diff_array.shape}
-                          sample: {time_diff_array[:5]}
-                          """
-                    )
+                # if user_i < 3 and hist_idx < 3:
+                #     print(
+                #         f"""
+                #           CHECKPOINT:
+                #           time_diff_array for hist_idx {hist_idx} with shape {time_diff_array.shape}
+                #           sample: {time_diff_array[:5]}
+                #           """
+                #     )
                 time_diff_features[row_indices, hist_idx] = time_diff_array
                 word_diff_features[row_indices, hist_idx] = word_diff_array
 
@@ -689,13 +689,13 @@ class FeatureExtractor:
                     dtype=np.int8,
                 )
 
-        print(
-            f"""
-              CHECKPOINT:
-              time_diff_features with {time_diff_features.shape[0]} rows and {time_diff_features.shape[1]} cols
-              sample: {time_diff_features[:5]}
-              """
-        )
+        # print(
+        #     f"""
+        #       CHECKPOINT:
+        #       time_diff_features with {time_diff_features.shape[0]} rows and {time_diff_features.shape[1]} cols
+        #       sample: {time_diff_features[:5]}
+        #       """
+        # )
 
         # Batch assign all features to DataFrame (SINGLE operation, not per-user!)
         print("Assigning features to DataFrame (batch operation)...")

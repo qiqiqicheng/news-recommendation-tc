@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional
+import os
 
 from ..rank.DIN import DINRanker
 from ..features.feature_extractor import FeatureExtractor
@@ -96,7 +97,6 @@ class RankPipeline:
         # Generate predictions
         probs = self.ranker.predict()
 
-        print(f"\n✓ Prediction completed!")
         print(f"Generated {len(probs)} predictions")
         print(f"Score range: [{probs.min():.4f}, {probs.max():.4f}]")
         print(f"Mean score: {probs.mean():.4f}")
@@ -116,10 +116,6 @@ class RankPipeline:
         Returns:
             recommendations: {user_id: [(item_id, score), ...]}
         """
-        print("\n" + "=" * 60)
-        print("STEP 4: Ranking and Recommendation")
-        print("=" * 60)
-
         # Get predictions
         if self.ranker is None:
             probs = self.predict()
@@ -140,7 +136,7 @@ class RankPipeline:
                 for _, row in top_items.iterrows()
             ]
 
-        print(f"\n✓ Ranking completed!")
+        print(f"\nRanking completed!")
         print(f"Generated recommendations for {len(recommendations)} users")
         print(f"Top-{top_k} items per user")
 
@@ -183,10 +179,6 @@ class RankPipeline:
             top_k=top_k, save_path=self.config.save_path + "/final_recommendations.pkl"
         )
 
-        print("\n" + "=" * 80)
-        print(" " * 20 + "RANKING PIPELINE COMPLETED")
-        print("=" * 80)
-
         return recommendations
 
 
@@ -196,5 +188,7 @@ if __name__ == "__main__":
 
     pipeline = RankPipeline(rank_config)
     pipeline.train()
+    pipeline.predict()
+    pipeline.rank_and_recommend(top_k=10, save_path=os.path.join(rank_config.save_path, "final_recommendations.pkl"))
 
     # python -m src.pipeline.rank_pipeline

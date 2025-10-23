@@ -26,7 +26,7 @@ class RecallPipeline:
         """
         Load data for recall pipeline
 
-        CRITICAL: In offline mode (training), MUST exclude last click from history
+        NOTE: In offline mode (training), MUST exclude last click from history
         - This ensures recall algorithms don't use ground truth
         - Enables proper positive/negative sample generation
         - Simulates real-world recommendation scenario
@@ -220,12 +220,6 @@ class RecallPipeline:
                 f"Mode: {'Offline (training)' if self.config.offline else 'Online (evaluation)'}"
             )
 
-            if self.config.offline:
-                print("⚠️  Offline mode: Recall uses history EXCLUDING last click")
-                print(
-                    "   This ensures recall can retrieve ground truth items for positive samples"
-                )
-
             all_users = list(set(self.user_item_time_dict.keys()))
             print(f"Total users for recall: {len(all_users)}")
 
@@ -298,33 +292,6 @@ class RecallPipeline:
             PersistenceManager.save_pickle(
                 self.fused_results, self.config.all_recall_results_path
             )
-
-        # # Print statistics
-        # stats = fusion.get_statistics()
-        # print(f"\n{'='*60}")
-        # print("Fusion Statistics:")
-        # print(f"{'='*60}")
-        # print(f"Number of methods: {stats['num_methods']}")
-        # print(f"Fusion strategy: {stats['fusion_strategy']}")
-        # print(f"Normalization: {stats['normalize_method']}")
-        # print(f"Total unique users: {stats['total_unique_users']}")
-        # print(f"Total unique items: {stats['total_unique_items']}")
-        # print(f"\nPer-method statistics:")
-        # for method in stats["methods"]:
-        #     print(f"  {method}:")
-        #     print(f"    Weight: {stats['weights'][method]}")
-        #     print(f"    Users: {stats[f'{method}_users']}")
-        #     print(f"    Avg items/user: {stats[f'{method}_avg_items']:.2f}")
-        #     if f"{method}_score_mean" in stats:
-        #         print(
-        #             f"    Score range: [{stats[f'{method}_score_min']:.4f}, {stats[f'{method}_score_max']:.4f}]"
-        #         )
-        #         print(
-        #             f"    Score mean±std: {stats[f'{method}_score_mean']:.4f}±{stats[f'{method}_score_std']:.4f}"
-        #         )
-        # print(f"{'='*60}\n")
-
-        # print("Recall fusion completed successfully!")
 
         return self.fused_results
 

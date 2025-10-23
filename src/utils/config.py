@@ -121,7 +121,7 @@ class RankConfig:
     # training hyperparameters
     batch_size: int = 256
     learning_rate: float = 0.001
-    epochs: int = 2
+    epochs: int = 5
 
     # DataLoader performance settings
     num_workers: int = (
