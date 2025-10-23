@@ -590,6 +590,75 @@ class DINRanker(BaseRanker):
 
         return user_profile_vocab_dict, item_vocab_dict, context_vocab_dict
 
+    def _apply_negative_sampling(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply negative sampling to balance positive and negative samples.
+
+        Args:
+            df: DataFrame with 'label' column
+
+        Returns:
+            Sampled DataFrame with reduced negative samples
+        """
+        if "label" not in df.columns:
+            print("Warning: No 'label' column found, skipping negative sampling")
+            return df
+
+        pos_samples = df[df["label"] == 1]
+        neg_samples = df[df["label"] == 0]
+
+        n_pos = len(pos_samples)
+        n_neg = len(neg_samples)
+
+        print(f"\n=== Negative Sampling ===")
+        print(f"Original distribution:")
+        print(f"  - Positive samples: {n_pos} ({n_pos/(n_pos+n_neg)*100:.2f}%)")
+        print(f"  - Negative samples: {n_neg} ({n_neg/(n_pos+n_neg)*100:.2f}%)")
+        print(f"  - Original ratio (neg:pos): {n_neg/n_pos:.2f}:1")
+
+        if n_pos == 0:
+            print("Warning: No positive samples found, returning original data")
+            return df
+
+        # Calculate target number of negative samples
+        target_neg_count = int(n_pos * self.config.negative_positive_ratio)
+
+        if target_neg_count >= n_neg:
+            print(
+                f"Note: Target negative samples ({target_neg_count}) >= available ({n_neg})"
+            )
+            print("Using all negative samples (no downsampling needed)")
+            return df
+
+        # Perform random undersampling on negative samples
+        np.random.seed(self.config.random_seed)
+        sampled_neg_samples = neg_samples.sample(
+            n=target_neg_count, random_state=self.config.random_seed
+        )
+
+        # Combine positive and sampled negative samples
+        balanced_df = pd.concat([pos_samples, sampled_neg_samples], ignore_index=True)
+
+        # Shuffle to mix positive and negative samples
+        balanced_df = balanced_df.sample(
+            frac=1, random_state=self.config.random_seed
+        ).reset_index(drop=True)
+
+        n_sampled_neg = len(sampled_neg_samples)
+        print(f"\nAfter negative sampling:")
+        print(f"  - Positive samples: {n_pos} ({n_pos/(n_pos+n_sampled_neg)*100:.2f}%)")
+        print(
+            f"  - Negative samples: {n_sampled_neg} ({n_sampled_neg/(n_pos+n_sampled_neg)*100:.2f}%)"
+        )
+        print(f"  - New ratio (neg:pos): {n_sampled_neg/n_pos:.2f}:1")
+        print(
+            f"  - Reduction: {n_neg} -> {n_sampled_neg} ({n_sampled_neg/n_neg*100:.1f}% kept)"
+        )
+        print(f"  - Total samples: {len(balanced_df)} (was {len(df)})")
+        print("=" * 50)
+
+        return balanced_df
+
     def train(self):
         """
         Train the clean DIN model.
@@ -641,13 +710,25 @@ class DINRanker(BaseRanker):
             # Use train_df for training, val_df for validation
             train_data = train_df
             val_data = val_df
-            print(f"\nUsing {len(train_data)} samples for training")
+
+            # Apply negative sampling to training data if enabled
+            if self.config.enable_negative_sampling and "label" in train_data.columns:
+                train_data = self._apply_negative_sampling(train_data)
+
+            print(f"\nUsing {len(train_data)} samples for training (after sampling)")
             print(f"Using {len(val_data)} samples for validation")
         else:
             print("\nWarning: 'is_train' or 'is_val' column not found")
             print("Falling back to simple 80/20 split")
             # Fallback: simple split
             train_size = int(len(self.main_df) * 0.8)
+            train_data = self.main_df.iloc[:train_size].copy()
+            val_data = self.main_df.iloc[train_size:].copy()
+            test_df = None
+
+            # Apply negative sampling if enabled
+            if self.config.enable_negative_sampling and "label" in train_data.columns:
+                train_data = self._apply_negative_sampling(train_data)
             train_data = self.main_df.iloc[:train_size].copy()
             val_data = self.main_df.iloc[train_size:].copy()
             test_df = None

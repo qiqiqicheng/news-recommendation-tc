@@ -136,13 +136,13 @@ class FeatureExtractor:
 
         if os.path.exists(os.path.join(self.config.save_path, "user_youtubednn_emb.pkl")):
             self.user_youtubednn_emb_dict = PersistenceManager.load_pickle(
-                self.config.save_path + "user_youtubednn_emb.pkl"
+                os.path.join(self.config.save_path, "user_youtubednn_emb.pkl")
             )
             print("successfully loaded user_youtubednn_emb_dict")
 
         if os.path.exists(os.path.join(self.config.save_path, "article_youtubednn_emb.pkl")):
             self.article_youtubednn_emb_dict = PersistenceManager.load_pickle(
-                self.config.save_path + "article_youtubednn_emb.pkl"
+                os.path.join(self.config.save_path, "article_youtubednn_emb.pkl")
             )
             print("successfully loaded article_youtubednn_emb_dict")
 

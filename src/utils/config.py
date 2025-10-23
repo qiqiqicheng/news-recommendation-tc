@@ -20,16 +20,16 @@ class RecallConfig:
     debug_user_sample_size: int = 10000
 
     # ItemCF
-    itemcf_sim_item_topk: int = 10
-    itemcf_recall_num: int = 10
-    itemcf_hot_topk: int = 10
+    itemcf_sim_item_topk: int = 20
+    itemcf_recall_num: int = 20
+    itemcf_hot_topk: int = 20
 
     # UserCF
-    usercf_sim_user_topk: int = 10
+    usercf_sim_user_topk: int = 20
     usercf_recall_num: int = 10
 
     # Embedding
-    embedding_topk: int = 10
+    embedding_topk: int = 20
     embedding_dim: int = 64
 
     # YoutubeDNN
@@ -40,10 +40,10 @@ class RecallConfig:
     youtubednn_epochs: int = 1
     youtubednn_batch_size: int = 256
     youtubednn_learning_rate: float = 0.001
-    youtubednn_topk: int = 10
+    youtubednn_topk: int = 20
 
     # fuse
-    fuse_topk: int = 10
+    fuse_topk: int = 30
 
     # features
     neg_sample_rate: float = 0.001
@@ -122,6 +122,14 @@ class RankConfig:
     batch_size: int = 256
     learning_rate: float = 0.001
     epochs: int = 2
+
+    # negative sampling (to handle class imbalance)
+    enable_negative_sampling: bool = True  # Whether to perform negative sampling
+    negative_positive_ratio: float = (
+        10.0  # Ratio of negative to positive samples (e.g., 10:1)
+    )
+    # Set to None to use all negative samples
+    # Recommended range: 5-20 depending on original imbalance
 
     def __post_init__(self):
         """Post initialization to set absolute paths and default values"""
