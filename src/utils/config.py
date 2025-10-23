@@ -123,6 +123,13 @@ class RankConfig:
     learning_rate: float = 0.001
     epochs: int = 2
 
+    # DataLoader performance settings
+    num_workers: int = (
+        4  # Number of subprocesses for data loading (0 = main process only)
+    )
+    pin_memory: bool = True  # Faster data transfer to CUDA (set to True if using GPU)
+    # Recommended: num_workers = 4-8 on GPU, 0 on CPU-only machines
+
     # negative sampling (to handle class imbalance)
     enable_negative_sampling: bool = True  # Whether to perform negative sampling
     negative_positive_ratio: float = (

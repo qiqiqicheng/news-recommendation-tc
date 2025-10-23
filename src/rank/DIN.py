@@ -308,6 +308,35 @@ class DINDataset(Dataset):
         self.label_col = label_col
         self.label_encoders = label_encoders or {}
 
+        # OPTIMIZATION: Pre-compute encoding cache to avoid repeated transformations
+        self._encoding_cache = {}
+        self._build_encoding_cache()
+
+    def _build_encoding_cache(self):
+        """Pre-compute all feature encodings to avoid runtime overhead."""
+        if not self.label_encoders:
+            return
+
+        print("Building feature encoding cache...")
+
+        for feat_name, encoder in self.label_encoders.items():
+            self._encoding_cache[feat_name] = {}
+            # Cache all known values for this feature
+            for class_idx, class_value in enumerate(encoder.classes_):
+                # encoded_val = class_idx + 1 (0 reserved for padding/unknown)
+                self._encoding_cache[feat_name][str(class_value)] = class_idx + 1
+
+        print(f"Encoding cache built for {len(self._encoding_cache)} features")
+
+    def _encode_feature_fast(self, feat_name, raw_value):
+        """Fast feature encoding using pre-built cache."""
+        if not self._encoding_cache or feat_name not in self._encoding_cache:
+            return raw_value
+
+        str_value = str(raw_value)
+        # Use cache for O(1) lookup instead of encoder.transform()
+        return self._encoding_cache[feat_name].get(str_value, 0)  # 0 for unknown
+
     def __len__(self):
         return len(self.main_df)
 
@@ -320,47 +349,31 @@ class DINDataset(Dataset):
         - context: {feature_name: encoded_value}
         - label: int
 
-        NOTE: We use encoder here
+        NOTE: We use encoder here with optimized caching
         """
         row = self.main_df.iloc[idx]
         user_id = str(row["user_id"])
         item_id = str(row["item_id"])
 
-        def encode_feature(feat_name, raw_value):
-            if not self.label_encoders or feat_name not in self.label_encoders:
-                return raw_value
-
-            try:
-                # Convert to string to handle all value types
-                str_value = str(raw_value)
-                # Use transform and handle potential errors for unseen values
-                transformed = self.label_encoders[feat_name].transform([str_value])
-                # Get first value as integer and add 1 (0 reserved for padding)
-                encoded_val = int(transformed[0]) + 1
-                return encoded_val
-            except:
-                # Default to 0 for unknown values
-                return 0
-
-        # Extract user profile features
+        # Extract user profile features (use fast cache lookup)
         user_profile = {}
         if user_id in self.user_profile_dict:
             for feat in self.user_profile_features:
                 raw_value = self.user_profile_dict[user_id].get(feat, 0)
-                user_profile[feat] = encode_feature(feat, raw_value)
+                user_profile[feat] = self._encode_feature_fast(feat, raw_value)
         else:
             user_profile = {feat: 0 for feat in self.user_profile_features}
 
-        # Extract recall item features
+        # Extract recall item features (use fast cache lookup)
         recall_item = {}
         if item_id in self.item_features_dict:
             for feat in self.item_features:
                 raw_value = self.item_features_dict[item_id].get(feat, 0)
-                recall_item[feat] = encode_feature(feat, raw_value)
+                recall_item[feat] = self._encode_feature_fast(feat, raw_value)
         else:
             recall_item = {feat: 0 for feat in self.item_features}
 
-        # Extract history items
+        # Extract history items (use fast cache lookup)
         history_items = []
         if user_id in self.user_history_dict:
             for hist_item_id in self.user_history_dict[user_id]:
@@ -368,16 +381,16 @@ class DINDataset(Dataset):
                 if hist_item_id in self.item_features_dict:
                     for feat in self.item_features:
                         raw_value = self.item_features_dict[hist_item_id].get(feat, 0)
-                        hist_item[feat] = encode_feature(feat, raw_value)
+                        hist_item[feat] = self._encode_feature_fast(feat, raw_value)
                 else:
                     hist_item = {feat: 0 for feat in self.item_features}
                 history_items.append(hist_item)
 
-        # Extract context features
+        # Extract context features (use fast cache lookup)
         context = {}
         for feat in self.context_features:
             raw_value = row.get(feat, 0)
-            context[feat] = encode_feature(feat, raw_value)
+            context[feat] = self._encode_feature_fast(feat, raw_value)
 
         # Extract label
         label = int(row[self.label_col]) if self.label_col in row else -1
@@ -393,7 +406,7 @@ class DINDataset(Dataset):
 
 def collate_fn(batch, seq_max_len):
     """
-    Clean collate function to handle variable-length sequences.
+    Optimized collate function to handle variable-length sequences.
     Pads/truncates history sequences to seq_max_len.
 
     Args:
@@ -413,71 +426,74 @@ def collate_fn(batch, seq_max_len):
     """
     batch_size = len(batch)
 
-    # Collect all feature names
+    # Collect all feature names (only from first sample)
     user_profile_features = list(batch[0]["user_profile"].keys())
     item_features = list(batch[0]["recall_item"].keys())
     context_features = list(batch[0]["context"].keys())
 
-    # Initialize batch dictionaries
-    user_profile_batch = {feat: [] for feat in user_profile_features}
-    recall_item_batch = {feat: [] for feat in item_features}
-    history_items_batch = {feat: [] for feat in item_features}
-    context_batch = {feat: [] for feat in context_features}
-    labels_batch = []
-    history_mask_batch = []  # Track valid positions
+    # Pre-allocate numpy arrays for efficiency (avoid Python list appending)
+    user_profile_batch = {
+        feat: np.zeros(batch_size, dtype=np.int64) for feat in user_profile_features
+    }
+    recall_item_batch = {
+        feat: np.zeros(batch_size, dtype=np.int64) for feat in item_features
+    }
+    history_items_batch = {
+        feat: np.zeros((batch_size, seq_max_len), dtype=np.int64)
+        for feat in item_features
+    }
+    context_batch = {
+        feat: np.zeros(batch_size, dtype=np.int64) for feat in context_features
+    }
+    labels_batch = np.zeros(batch_size, dtype=np.float32)
+    history_mask_batch = np.zeros((batch_size, seq_max_len), dtype=np.float32)
 
-    for sample in batch:
-        # User profile features
+    # Fill arrays with vectorized operations where possible
+    for i, sample in enumerate(batch):
+        # User profile features (scalar per sample)
         for feat in user_profile_features:
-            user_profile_batch[feat].append(sample["user_profile"][feat])
+            user_profile_batch[feat][i] = sample["user_profile"][feat]
 
-        # Recall item features
+        # Recall item features (scalar per sample)
         for feat in item_features:
-            recall_item_batch[feat].append(sample["recall_item"][feat])
+            recall_item_batch[feat][i] = sample["recall_item"][feat]
 
         # History items features - pad or truncate
         history_items = sample["history_items"]
-        history_len = len(history_items)
+        history_len = min(len(history_items), seq_max_len)
 
-        # Truncate if too long
-        if history_len > seq_max_len:
+        # Take last seq_max_len items if too long
+        if len(history_items) > seq_max_len:
             history_items = history_items[-seq_max_len:]
-            history_len = seq_max_len
 
-        # Create mask: 1 for valid positions, 0 for padding
-        mask = [1] * history_len + [0] * (seq_max_len - history_len)
-        history_mask_batch.append(mask)
+        # Set mask for valid positions
+        history_mask_batch[i, :history_len] = 1
 
-        # Pad if too short
+        # Fill history features
         for feat in item_features:
             feat_values = [item[feat] for item in history_items]
-            if history_len < seq_max_len:
-                feat_values = feat_values + [0] * (seq_max_len - history_len)
-            history_items_batch[feat].append(feat_values)
+            history_items_batch[feat][i, :history_len] = feat_values
 
-        # Context features
+        # Context features (scalar per sample)
         for feat in context_features:
-            context_batch[feat].append(sample["context"][feat])
+            context_batch[feat][i] = sample["context"][feat]
 
         # Label
-        labels_batch.append(sample["label"])
+        labels_batch[i] = sample["label"]
 
-    # Convert to tensors
-    for feat in user_profile_features:
-        user_profile_batch[feat] = torch.tensor(  # type: ignore
-            user_profile_batch[feat], dtype=torch.long
-        )
-
-    for feat in item_features:
-        recall_item_batch[feat] = torch.tensor(  # type: ignore
-            recall_item_batch[feat], dtype=torch.long
-        )
-        history_items_batch[feat] = torch.tensor(  # type: ignore
-            history_items_batch[feat], dtype=torch.long
-        )
-
-    for feat in context_features:
-        context_batch[feat] = torch.tensor(context_batch[feat], dtype=torch.long)  # type: ignore
+    # Convert numpy arrays to tensors (more efficient than list -> tensor)
+    user_profile_batch = {
+        feat: torch.from_numpy(arr) for feat, arr in user_profile_batch.items()
+    }
+    recall_item_batch = {
+        feat: torch.from_numpy(arr) for feat, arr in recall_item_batch.items()
+    }
+    history_items_batch = {
+        feat: torch.from_numpy(arr) for feat, arr in history_items_batch.items()
+    }
+    context_batch = {feat: torch.from_numpy(arr) for feat, arr in context_batch.items()}
+    labels_batch = torch.from_numpy(labels_batch)
+    history_mask_batch = torch.from_numpy(history_mask_batch)
 
     labels_batch = torch.tensor(labels_batch, dtype=torch.float32)
     history_mask_batch = torch.tensor(history_mask_batch, dtype=torch.float32)  # (B, T)
@@ -783,6 +799,8 @@ class DINRanker(BaseRanker):
                 val_dataset,
                 batch_size=self.config.batch_size,
                 shuffle=False,
+                num_workers=self.config.num_workers,
+                pin_memory=self.config.pin_memory,
                 collate_fn=partial(collate_fn, seq_max_len=self.config.din_seq_max_len),
             )
 
@@ -791,6 +809,8 @@ class DINRanker(BaseRanker):
             train_dataset,
             batch_size=self.config.batch_size,
             shuffle=True,
+            num_workers=self.config.num_workers,
+            pin_memory=self.config.pin_memory,
             collate_fn=partial(collate_fn, seq_max_len=self.config.din_seq_max_len),
         )
 
@@ -801,6 +821,9 @@ class DINRanker(BaseRanker):
         criterion = nn.BCELoss()
 
         print(f"Training on device: {device}")
+        print(
+            f"DataLoader settings: num_workers={self.config.num_workers}, pin_memory={self.config.pin_memory}"
+        )
         print(f"Number of training samples: {len(train_dataset)}")
         print(f"Number of batches: {len(train_loader)}")
         if val_loader is not None and val_dataset is not None:
@@ -1024,6 +1047,8 @@ class DINRanker(BaseRanker):
             test_dataset,
             batch_size=self.config.batch_size,
             shuffle=False,
+            num_workers=self.config.num_workers,
+            pin_memory=self.config.pin_memory,
             collate_fn=partial(collate_fn, seq_max_len=self.config.din_seq_max_len),
         )
 
