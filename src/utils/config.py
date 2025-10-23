@@ -15,35 +15,35 @@ class RecallConfig:
     recall_path: str = field(init=False)
 
     # sampling and debug
-    debug_mode: bool = True
+    debug_mode: bool = False
     debug_sample_size: int = 10000
     debug_user_sample_size: int = 10000
 
     # ItemCF
-    itemcf_sim_item_topk: int = 20
-    itemcf_recall_num: int = 20
-    itemcf_hot_topk: int = 20
+    itemcf_sim_item_topk: int = 10
+    itemcf_recall_num: int = 10
+    itemcf_hot_topk: int = 10
 
     # UserCF
-    usercf_sim_user_topk: int = 20
-    usercf_recall_num: int = 30
+    usercf_sim_user_topk: int = 10
+    usercf_recall_num: int = 10
 
     # Embedding
-    embedding_topk: int = 20
+    embedding_topk: int = 10
     embedding_dim: int = 64
 
     # YoutubeDNN
     youtubednn_seq_max_len: int = 30
     youtubednn_embedding_dim: int = 16
     youtubednn_hidden_units: List[int] = field(default_factory=lambda: [64, 16])
-    youtubednn_negsample: int = 4
+    youtubednn_negsample: int = 4  # Number of negative samples per positive sample
     youtubednn_epochs: int = 1
     youtubednn_batch_size: int = 256
     youtubednn_learning_rate: float = 0.001
-    youtubednn_topk: int = 20
+    youtubednn_topk: int = 10
 
     # fuse
-    fuse_topk: int = 30
+    fuse_topk: int = 10
 
     # features
     neg_sample_rate: float = 0.001
@@ -51,7 +51,7 @@ class RecallConfig:
         10  # minimum number of samples for each user in negative sampling
     )
     last_N: int = 3  # last N items in user behavior sequence as features
-    features: List[str] = []
+    features: List[str] = field(default_factory=list)
 
     enable_binning: bool = True
     binning_strategy: str = "quantile"  # "quantile" or "uniform"
@@ -92,7 +92,7 @@ class RecallConfig:
 @dataclass
 class RankConfig:
     # general settings
-    debug_mode: bool = True
+    debug_mode: bool = False
     offline: bool = True
     random_seed: int = 23
 
@@ -103,17 +103,13 @@ class RankConfig:
     data_path: str = field(init=False)
     save_path: str = field(init=False)
 
-    # feature paths
-    train_set_path: str = field(init=False)
-    test_set_path: str = field(init=False)
-
-    # DIN-specific paths
-    train_history_dict_path: str = field(init=False)
-    test_history_dict_path: str = field(init=False)
-    user_profile_features_path: str = field(init=False)
-    item_features_path: str = field(init=False)
-    context_features_path: str = field(init=False)
-    article_info_dict_path: str = field(init=False)
+    # Clean feature extractor paths
+    main_features_path: str = field(init=False)
+    user_profile_dict_path: str = field(init=False)
+    item_features_dict_path: str = field(init=False)
+    user_history_dict_path: str = field(init=False)
+    feature_lists_path: str = field(init=False)
+    discretizers_path: str = field(init=False)
 
     # DIN model hyperparameters
     din_embedding_dim: int = 32
@@ -125,34 +121,26 @@ class RankConfig:
     # training hyperparameters
     batch_size: int = 256
     learning_rate: float = 0.001
-    epochs: int = 10
+    epochs: int = 2
 
     def __post_init__(self):
         """Post initialization to set absolute paths and default values"""
         self.data_path = os.path.join(self._project_root, "data", "raw")
         self.save_path = os.path.join(self._project_root, "temp")
 
-        # feature paths
-        self.train_set_path = os.path.join(self.save_path, "train_features.csv")
-        self.test_set_path = os.path.join(self.save_path, "test_features.csv")
-
-        # DIN-specific paths
-        self.train_history_dict_path = os.path.join(
-            self.save_path, "train_history_dict.pkl"
+        # Clean feature extractor paths
+        self.main_features_path = os.path.join(self.save_path, "main_features.csv")
+        self.user_profile_dict_path = os.path.join(
+            self.save_path, "user_profile_dict.pkl"
         )
-        self.test_history_dict_path = os.path.join(
-            self.save_path, "test_history_dict.pkl"
+        self.item_features_dict_path = os.path.join(
+            self.save_path, "item_features_dict.pkl"
         )
-        self.user_profile_features_path = os.path.join(
-            self.save_path, "user_profile_features.pkl"
+        self.user_history_dict_path = os.path.join(
+            self.save_path, "user_history_dict.pkl"
         )
-        self.item_features_path = os.path.join(self.save_path, "item_features.pkl")
-        self.context_features_path = os.path.join(
-            self.save_path, "context_features.pkl"
-        )
-        self.article_info_dict_path = os.path.join(
-            self.save_path, "article_info_dict.pkl"
-        )
+        self.feature_lists_path = os.path.join(self.save_path, "feature_lists.pkl")
+        self.discretizers_path = os.path.join(self.save_path, "discretizers.pkl")
 
         os.makedirs(self.data_path, exist_ok=True)
         os.makedirs(self.save_path, exist_ok=True)

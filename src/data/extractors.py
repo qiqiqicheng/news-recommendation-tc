@@ -72,7 +72,7 @@ class UserFeatureExtractor:
         Returns:
             (user_hist_item_typs_dict, user_hist_item_ids_dict,
              user_hist_item_words_dict, user_last_item_created_time_dict)
-             
+
                 user_hist_item_typs_dict: {user_id: set(category_id)}
                 user_hist_item_ids_dict: {user_id: set(item_id)}
                 user_hist_item_words_dict: {user_id: avg_words_count}
@@ -140,7 +140,7 @@ class ItemFeatureExtractor:
 
         Returns:
             (item_type_dict, item_words_dict, item_created_time_dict)
-             
+
                 item_type_dict: {item_id: category_id}
                 item_words_dict: {item_id: words_count}
                 item_created_time_dict: {item_id: created_time}
@@ -233,31 +233,47 @@ class InteractionFeatureExtractor:
     @staticmethod
     def get_hist_and_last_click(
         click_df: pd.DataFrame,
+        offline: bool = True,
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
-        split history and last click(for offline evaluation)
+        Split history and last click for offline training/online evaluation
+
+        Offline mode (training): Exclude last click from history, use last click as ground truth
+        Online mode (evaluation): Use all history for recall, no ground truth separation
 
         Args:
-            click_df
+            click_df: Click log dataframe
+            offline: True for training (exclude last click), False for evaluation (use all history)
 
         Returns:
             (click_hist_df, click_last_df)
+            - offline=True: history excludes last click, last_df contains ground truth
+            - offline=False: history includes all clicks, last_df is empty
         """
         click_df = click_df.sort_values(by=["user_id", "click_timestamp"])
 
-        # 获取每个用户的最后一次点击
-        click_last_df = click_df.groupby("user_id").tail(1)
+        if offline:
+            # Training mode: exclude last click from history for proper label generation
+            # Get last click as ground truth
+            click_last_df = click_df.groupby("user_id").tail(1)
 
-        # 获取历史点击(如果用户只有一次点击,也包含进去避免数据丢失)
-        def hist_func(user_df):
-            if len(user_df) == 1:
-                return user_df
-            else:
-                return user_df[:-1]
+            # Get historical clicks (exclude last click for recall)
+            def hist_func(user_df):
+                if len(user_df) == 1:
+                    # Keep single-click users for cold-start handling
+                    return user_df
+                else:
+                    # Exclude last click
+                    return user_df[:-1]
 
-        click_hist_df = (
-            click_df.groupby("user_id").apply(hist_func).reset_index(drop=True)
-        )
+            click_hist_df = (
+                click_df.groupby("user_id").apply(hist_func).reset_index(drop=True)
+            )
+        else:
+            # Evaluation/prediction mode: use all history for best recall performance
+            click_hist_df = click_df
+            # No ground truth separation in online mode
+            click_last_df = pd.DataFrame()
 
         return click_hist_df, click_last_df
 
