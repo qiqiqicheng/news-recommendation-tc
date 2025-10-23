@@ -2,8 +2,8 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional
 
-from ..rank.clean_DIN import CleanDINRanker
-from ..features.clean_feature_extractor import CleanFeatureExtractor
+from ..rank.DIN import DINRanker
+from ..features.feature_extractor import FeatureExtractor
 from ..utils.config import RankConfig, RecallConfig
 from ..utils.persistence import PersistenceManager
 
@@ -50,7 +50,7 @@ class RankPipeline:
         print("=" * 60)
 
         # Initialize feature extractor with recall config
-        feature_extractor = CleanFeatureExtractor(recall_config)
+        feature_extractor = FeatureExtractor(recall_config)
 
         # Extract and save features
         feature_extractor.extract_features(save=True)
@@ -69,7 +69,7 @@ class RankPipeline:
         - Saves trained model and encoders
         """
         # Initialize ranker
-        self.ranker = CleanDINRanker(self.config)
+        self.ranker = DINRanker(self.config)
 
         # Train model
         self.ranker.train()
@@ -189,11 +189,12 @@ class RankPipeline:
 
         return recommendations
 
+
 if __name__ == "__main__":
     rank_config = RankConfig(offline=True)
     recall_config = RecallConfig()
 
     pipeline = RankPipeline(rank_config)
     pipeline.train()
-    
+
     # python -m src.pipeline.rank_pipeline
