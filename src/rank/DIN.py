@@ -155,6 +155,11 @@ class DINModel(nn.Module):
         """
         super().__init__()
 
+        # Store vocab dicts for later use (e.g., logging)
+        self.user_profile_vocab_dict = user_profile_vocab_dict
+        self.item_vocab_dict = item_vocab_dict
+        self.context_vocab_dict = context_vocab_dict
+
         # Embedding layers
         self.user_profile_embedding_dict = nn.ModuleDict(
             {
@@ -613,12 +618,20 @@ class DINRanker(BaseRanker):
 
         return user_profile_vocab_dict, item_vocab_dict, context_vocab_dict
 
-    def _apply_negative_sampling(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _apply_negative_sampling(
+        self,
+        df: pd.DataFrame,
+        ratio: Optional[float] = None,
+        dataset_name: str = "Dataset",
+    ) -> pd.DataFrame:
         """
         Apply negative sampling to balance positive and negative samples.
 
         Args:
             df: DataFrame with 'label' column
+            ratio: Negative to positive ratio (e.g., 10.0 means 10:1).
+                   If None, uses self.config.negative_positive_ratio
+            dataset_name: Name of the dataset for logging (e.g., "Training", "Validation")
 
         Returns:
             Sampled DataFrame with reduced negative samples
@@ -633,7 +646,12 @@ class DINRanker(BaseRanker):
         n_pos = len(pos_samples)
         n_neg = len(neg_samples)
 
-        print(f"\n=== Negative Sampling ===")
+        # Use provided ratio or fall back to config
+        sampling_ratio = (
+            ratio if ratio is not None else self.config.negative_positive_ratio
+        )
+
+        print(f"\n=== Negative Sampling ({dataset_name}) ===")
         print(f"Original distribution:")
         print(f"  - Positive samples: {n_pos} ({n_pos/(n_pos+n_neg)*100:.2f}%)")
         print(f"  - Negative samples: {n_neg} ({n_neg/(n_pos+n_neg)*100:.2f}%)")
@@ -644,7 +662,7 @@ class DINRanker(BaseRanker):
             return df
 
         # Calculate target number of negative samples
-        target_neg_count = int(n_pos * self.config.negative_positive_ratio)
+        target_neg_count = int(n_pos * sampling_ratio)
 
         if target_neg_count >= n_neg:
             print(
@@ -668,7 +686,7 @@ class DINRanker(BaseRanker):
         ).reset_index(drop=True)
 
         n_sampled_neg = len(sampled_neg_samples)
-        print(f"\nAfter negative sampling:")
+        print(f"\nAfter negative sampling (target ratio {sampling_ratio:.1f}:1):")
         print(f"  - Positive samples: {n_pos} ({n_pos/(n_pos+n_sampled_neg)*100:.2f}%)")
         print(
             f"  - Negative samples: {n_sampled_neg} ({n_sampled_neg/(n_pos+n_sampled_neg)*100:.2f}%)"
@@ -730,10 +748,27 @@ class DINRanker(BaseRanker):
 
             # Apply negative sampling to training data if enabled
             if self.config.enable_negative_sampling and "label" in train_data.columns:
-                train_data = self._apply_negative_sampling(train_data)
+                train_data = self._apply_negative_sampling(
+                    train_data,
+                    ratio=self.config.negative_positive_ratio,
+                    dataset_name="Training Set",
+                )
+
+            # Apply negative sampling to validation data if enabled
+            # Use the same ratio as training to ensure consistent evaluation
+            if (
+                self.config.enable_negative_sampling
+                and "label" in val_data.columns
+                and len(val_data) > 0
+            ):
+                val_data = self._apply_negative_sampling(
+                    val_data,
+                    ratio=self.config.negative_positive_ratio,
+                    dataset_name="Validation Set",
+                )
 
             print(f"\nUsing {len(train_data)} samples for training (after sampling)")
-            print(f"Using {len(val_data)} samples for validation")
+            print(f"Using {len(val_data)} samples for validation (after sampling)")
         else:
             print("\nWarning: 'is_train' or 'is_val' column not found")
             print("Falling back to simple 80/20 split")
@@ -745,10 +780,19 @@ class DINRanker(BaseRanker):
 
             # Apply negative sampling if enabled
             if self.config.enable_negative_sampling and "label" in train_data.columns:
-                train_data = self._apply_negative_sampling(train_data)
-            train_data = self.main_df.iloc[:train_size].copy()
-            val_data = self.main_df.iloc[train_size:].copy()
-            test_df = None
+                train_data = self._apply_negative_sampling(
+                    train_data,
+                    ratio=self.config.negative_positive_ratio,
+                    dataset_name="Training Set",
+                )
+
+            # Apply negative sampling to validation data if enabled
+            if self.config.enable_negative_sampling and "label" in val_data.columns:
+                val_data = self._apply_negative_sampling(
+                    val_data,
+                    ratio=self.config.negative_positive_ratio,
+                    dataset_name="Validation Set",
+                )
 
         # Prepare vocabulary dictionaries
         user_profile_vocab, item_vocab, context_vocab = self._prepare_vocab_dicts()
@@ -1016,17 +1060,20 @@ class DINRanker(BaseRanker):
         plt.grid(True, alpha=0.3)
         plt.legend()
 
-        # Save plot
-        save_path = os.path.join(self.config.save_path, "din_training_loss.png")
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        print(f"Loss plot saved to: {save_path}")
+        # Save PNG plot
+        png_path = os.path.join(self.config.save_path, "din_training_loss.png")
+        plt.savefig(png_path, dpi=300, bbox_inches="tight")
+        print(f"Loss plot (PNG) saved to: {png_path}")
+
+        # Save PDF plot
+        pdf_path = os.path.join(self.config.save_path, "din_training_loss.pdf")
+        plt.savefig(pdf_path, bbox_inches="tight")
+        print(f"Loss plot (PDF) saved to: {pdf_path}")
+
+        # Close figure after all saves
         plt.close()
 
-        save_path = os.path.join(self.config.save_path, "din_training_loss.pdf")
-        plt.savefig(save_path, bbox_inches="tight")
-        print(f"Loss plot saved to: {save_path}")
-        plt.close()
-
+        # Save loss history to CSV
         loss_df = pd.DataFrame(self.loss_history, columns=["epoch", "loss"])
         csv_path = os.path.join(self.config.save_path, "din_training_loss.csv")
         loss_df.to_csv(csv_path, index=False)
