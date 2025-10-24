@@ -132,7 +132,7 @@ class DINModel(nn.Module):
         activation: Literal["dice", "prelu"] = "dice",
     ) -> None:
         """
-        Clean DIN model using new data structure
+        DIN model using new data structure
 
         Args:
             user_profile_vocab_dict: {feature_name: vocab_size, ...}
@@ -285,7 +285,7 @@ class DINDataset(Dataset):
         label_encoders: Optional[Dict] = None,
     ) -> None:
         """
-        Clean dataset for DIN model.
+        Dataset for DIN model.
 
         Args:
             main_df: DataFrame with (user_id, item_id, context_features..., label)
@@ -410,11 +410,11 @@ def collate_fn(batch, seq_max_len):
     Pads/truncates history sequences to seq_max_len.
 
     Args:
-        batch: List of dictionaries from CleanDINDataset
+        batch: List of dictionaries from DINDataset
         seq_max_len: Maximum sequence length to pad/truncate to
 
     Returns:
-        A dictionary of batched tensors ready for CleanDINModel forward
+        A dictionary of batched tensors ready for DINModel forward
         {
             'user_profile': {feature_name: tensor[B]},
             'recall_item': {feature_name: tensor[B]},
@@ -512,8 +512,8 @@ class DINRanker(BaseRanker):
         self.label_encoders = {}  # store label encoders for each feature
 
     def load(self):
-        """Load data using new clean structure"""
-        print("Loading clean feature data...")
+        """Load data using new structure"""
+        print("Loading feature data...")
 
         # Load main dataframe
         self.main_df = pd.read_csv(self.config.main_features_path)
@@ -674,7 +674,7 @@ class DINRanker(BaseRanker):
 
     def train(self):
         """
-        Train the clean DIN model.
+        Train the DIN model.
         """
         # Load data
         self.load()
@@ -984,19 +984,23 @@ class DINRanker(BaseRanker):
 
         plt.xlabel("Epoch", fontsize=12)
         plt.ylabel("Loss", fontsize=12)
-        plt.title("Clean DIN Model Training Loss Curve", fontsize=14, fontweight="bold")
+        plt.title("DIN Model Training Loss Curve", fontsize=14, fontweight="bold")
         plt.grid(True, alpha=0.3)
         plt.legend()
 
         # Save plot
-        save_path = os.path.join(self.config.save_path, "clean_din_training_loss.png")
+        save_path = os.path.join(self.config.save_path, "din_training_loss.png")
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"Loss plot saved to: {save_path}")
         plt.close()
+        
+        save_path = os.path.join(self.config.save_path, "din_training_loss.pdf")
+        plt.savefig(save_path, bbox_inches="tight")
+        print(f"Loss plot saved to: {save_path}")
+        plt.close()
 
-        # Also save loss history as csv
         loss_df = pd.DataFrame(self.loss_history, columns=["epoch", "loss"])
-        csv_path = os.path.join(self.config.save_path, "clean_din_training_loss.csv")
+        csv_path = os.path.join(self.config.save_path, "din_training_loss.csv")
         loss_df.to_csv(csv_path, index=False)
         print(f"Loss history saved to: {csv_path}")
 
