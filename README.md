@@ -4,7 +4,7 @@
 
 # News Recommendation System
 
->  a practice project for Recommendation System, Deep Learning and ~~Python OOP~~
+> a practice project for Recommendation System, Deep Learning and ~~Python OOP~~
 
 ## Data
 
@@ -27,13 +27,6 @@ See [Tianchi](https://tianchi.aliyun.com/competition/entrance/531842/information
 |                         | Total Recall Pairs  | 7,500,000 |                                                       |
 | **Ranking Stage** | Training Samples    | 675,653   | After negative sampling (10:1 ratio)                  |
 |                         | Validation Samples  | 169,037   | After negative sampling (10:1 ratio)                  |
-
-**Key Characteristics:**
-
-- **Sparsity**: ~99.96% sparsity in user-item interaction matrix
-- **Cold Start**: ~30% of test users have no training history
-- **Class Imbalance**: Original positive:negative ≈ 1:100, balanced to 1:10 via negative sampling
-- **Recall Efficiency**: From 360K articles → 30 candidates per user (99.99% reduction)
 
 ## Overall
 
@@ -76,9 +69,6 @@ python main.py --mode recall
 # Only ranking stage (assumes recall results exist)
 python main.py --mode rank --offline --epochs 5
 
-# Inference mode (use pre-trained models)
-python main.py --mode inference --model-dir ./temp --top-k 10
-
 # Custom hyperparameters
 python main.py --mode full \
     --epochs 10 \
@@ -90,29 +80,14 @@ python main.py --mode full \
     --top-k 20
 ```
 
-### Command Line Arguments
-
-- `--mode`: Pipeline mode (`full`, `recall`, `rank`, `inference`)
-- `--offline`: Offline training mode (exclude last click for labels)
-- `--debug`: Debug mode with small data samples
-- `--epochs`: Number of training epochs
-- `--batch-size`: Training batch size
-- `--learning-rate`: Learning rate for optimizer
-- `--embedding-dim`: Embedding dimension for DIN model
-- `--num-workers`: DataLoader workers (0 for CPU, 4-8 for GPU)
-- `--negative-ratio`: Negative to positive sampling ratio
-- `--top-k`: Number of final recommendations per user
-- `--model-dir`: Directory to load pre-trained model
-- `--save-dir`: Directory to save models and results
-
 ## Project Structure
 
 ```
 root/
 │
-├── main.py                        
+├── main.py                      
 │
-├── data/                          
+├── data/                        
 │   ├── raw/                         # Raw input data
 │   │   ├── articles_emb.csv         # Article embeddings
 │   │   ├── articles.csv             # Article metadata
@@ -167,6 +142,9 @@ root/
 ```
 
 ## Performance
+* System: Ubuntu 24.04.3 LTS
+* CPU: Intel Xeon Silver 4210R @ 2.4GHz
+* GPU: NVIDIA RTX 4090 24GB; CUDA 12.4
 
 ![dnn_loss](images/din_training_loss.png)
 
