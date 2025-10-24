@@ -1068,7 +1068,7 @@ class DINRanker(BaseRanker):
         # Save PDF plot
         pdf_path = os.path.join(self.config.save_path, "din_training_loss.pdf")
         plt.savefig(pdf_path, bbox_inches="tight")
-        print(f"Loss plot (PDF) saved to: {pdf_path}")
+        print(f"Loss plot (PDF) saved to: {pdf_path}")-
 
         # Close figure after all saves
         plt.close()
@@ -1180,19 +1180,13 @@ class DINRanker(BaseRanker):
             },
             "model_architecture": {
                 "user_profile_vocab_size": (
-                    {k: len(v) for k, v in self.model.user_profile_vocab_dict.items()}
-                    if self.model
-                    else {}
+                    self.model.user_profile_vocab_dict if self.model else {}
                 ),
                 "item_vocab_size": (
-                    {k: len(v) for k, v in self.model.item_vocab_dict.items()}
-                    if self.model
-                    else {}
+                    self.model.item_vocab_dict if self.model else {}
                 ),
                 "context_vocab_size": (
-                    {k: len(v) for k, v in self.model.context_vocab_dict.items()}
-                    if self.model
-                    else {}
+                    self.model.context_vocab_dict if self.model else {}
                 ),
             },
             "training_results": {
