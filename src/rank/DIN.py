@@ -1068,7 +1068,7 @@ class DINRanker(BaseRanker):
         # Save PDF plot
         pdf_path = os.path.join(self.config.save_path, "din_training_loss.pdf")
         plt.savefig(pdf_path, bbox_inches="tight")
-        print(f"Loss plot (PDF) saved to: {pdf_path}")-
+        print(f"Loss plot (PDF) saved to: {pdf_path}")
 
         # Close figure after all saves
         plt.close()
