@@ -31,14 +31,11 @@ class ItemCFSimilarity(BaseSimilarityCalculator):
         """
         print("Calculating ItemCF similarity matrix...")
 
-        # 获取用户-物品-时间字典
         user_item_time_dict = UserFeatureExtractor.get_user_item_time_dict(click_df)
 
-        # 初始化相似度矩阵和物品计数
         i2i_sim = {}
         item_cnt = defaultdict(int)
 
-        # 遍历每个用户的点击序列
         for user, item_time_list in tqdm(
             user_item_time_dict.items(), desc="Computing item similarity"
         ):
@@ -46,12 +43,10 @@ class ItemCFSimilarity(BaseSimilarityCalculator):
                 item_cnt[i] += 1
                 i2i_sim.setdefault(i, {})
 
-                # 与该用户点击的其他物品计算相似度
                 for loc2, (j, j_click_time) in enumerate(item_time_list):
                     if i == j:
                         continue
 
-                    # 1. 位置权重 (考虑正向和反向点击)
                     loc_alpha = (
                         self.config.loc_alpha
                         if loc2 > loc1
@@ -61,24 +56,20 @@ class ItemCFSimilarity(BaseSimilarityCalculator):
                         self.config.loc_beta ** (np.abs(loc2 - loc1) - 1)
                     )
 
-                    # 2. 点击时间权重
                     click_time_weight = self.weight_calc.time_decay_weight(
                         i_click_time, j_click_time, alpha=self.config.time_decay_alpha
                     )
 
-                    # 3. 创建时间权重
                     created_time_weight = self.weight_calc.time_decay_weight(
                         item_created_time_dict[i],
                         item_created_time_dict[j],
                         alpha=self.config.created_time_alpha,
                     )
 
-                    # 4. 用户活跃度惩罚 (防止活跃用户主导相似度)
                     user_penalty = 1.0 / self.weight_calc.log_penalty(
                         len(item_time_list)
                     )
 
-                    # 累加相似度
                     i2i_sim[i].setdefault(j, 0)
                     i2i_sim[i][j] += (
                         loc_weight
@@ -87,7 +78,6 @@ class ItemCFSimilarity(BaseSimilarityCalculator):
                         * user_penalty
                     )
 
-        # 归一化相似度 (使用余弦相似度的分母)
         i2i_sim_normalized = i2i_sim.copy()
         for i, related_items in i2i_sim.items():
             for j, wij in related_items.items():
