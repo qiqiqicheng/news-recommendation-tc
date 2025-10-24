@@ -5,8 +5,18 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import pandas as pd
 import os
+import json
+from datetime import datetime
 from typing import Optional, List, Literal, Dict
 from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import (
+    roc_auc_score,
+    log_loss,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+)
 from functools import partial
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -921,6 +931,21 @@ class DINRanker(BaseRanker):
 
         print("Training completed!")
 
+        # Compute final metrics on validation set
+        final_metrics = None
+        if val_loader is not None:
+            print("\nComputing final validation metrics...")
+            final_metrics = self._compute_validation_metrics(val_loader, device)
+
+            print("FINAL VALIDATION METRICS")
+            print("=" * 60)
+            print(f"AUC-ROC:       {final_metrics['auc_roc']:.4f}")
+            print(f"Log Loss:      {final_metrics['log_loss']:.4f}")
+            print(f"Accuracy:      {final_metrics['accuracy']:.4f}")
+            print(f"Precision:     {final_metrics['precision']:.4f}")
+            print(f"Recall:        {final_metrics['recall']:.4f}")
+            print(f"F1-Score:      {final_metrics['f1_score']:.4f}")
+
         # Save loss plot
         self._save_loss_plot()
 
@@ -931,6 +956,9 @@ class DINRanker(BaseRanker):
 
         # Save the trained model
         self.save_model()
+
+        # Save training log
+        self._save_training_log(final_metrics, train_dataset, val_dataset)
 
     def _save_loss_plot(self):
         """Save training loss curve plot with validation curve."""
@@ -993,7 +1021,7 @@ class DINRanker(BaseRanker):
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"Loss plot saved to: {save_path}")
         plt.close()
-        
+
         save_path = os.path.join(self.config.save_path, "din_training_loss.pdf")
         plt.savefig(save_path, bbox_inches="tight")
         print(f"Loss plot saved to: {save_path}")
@@ -1003,6 +1031,149 @@ class DINRanker(BaseRanker):
         csv_path = os.path.join(self.config.save_path, "din_training_loss.csv")
         loss_df.to_csv(csv_path, index=False)
         print(f"Loss history saved to: {csv_path}")
+
+    def _compute_validation_metrics(
+        self, val_loader: DataLoader, device: torch.device
+    ) -> Dict[str, float]:
+        """
+        Compute comprehensive validation metrics.
+
+        Args:
+            val_loader: Validation data loader
+            device: torch device
+
+        Returns:
+            Dictionary containing AUC-ROC, Log Loss, Accuracy, Precision, Recall, F1-Score
+        """
+        self.model.eval()
+        all_probs = []
+        all_labels = []
+
+        with torch.no_grad():
+            for batch in tqdm(val_loader, desc="Computing validation metrics"):
+                batch = {
+                    k: (
+                        {feat: val.to(device) for feat, val in v.items()}
+                        if isinstance(v, dict)
+                        else v.to(device)
+                    )
+                    for k, v in batch.items()
+                }
+                labels = batch["labels"]
+                probs = self.model(batch)
+
+                all_probs.extend(probs.cpu().numpy())
+                all_labels.extend(labels.cpu().numpy())
+
+        all_probs = np.array(all_probs)
+        all_labels = np.array(all_labels)
+        all_preds = (all_probs > 0.5).astype(int)
+
+        # Compute metrics
+        metrics = {
+            "auc_roc": float(roc_auc_score(all_labels, all_probs)),
+            "log_loss": float(log_loss(all_labels, all_probs)),
+            "accuracy": float(accuracy_score(all_labels, all_preds)),
+            "precision": float(precision_score(all_labels, all_preds, zero_division=0)),
+            "recall": float(recall_score(all_labels, all_preds, zero_division=0)),
+            "f1_score": float(f1_score(all_labels, all_preds, zero_division=0)),
+        }
+
+        return metrics
+
+    def _save_training_log(
+        self,
+        final_metrics: Optional[Dict[str, float]],
+        train_dataset: Optional[Dataset],
+        val_dataset: Optional[Dataset],
+    ) -> None:
+        """
+        Save comprehensive training log to JSON file.
+
+        Args:
+            final_metrics: Dictionary of validation metrics (can be None if no validation)
+            train_dataset: Training dataset
+            val_dataset: Validation dataset
+        """
+        # Prepare log directory
+        log_dir = os.path.join(self.config.save_path, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+
+        # Create timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Prepare log data
+        log_data = {
+            "timestamp": timestamp,
+            "model_type": "DIN (Deep Interest Network)",
+            "training_config": {
+                "epochs": self.config.epochs,
+                "batch_size": self.config.batch_size,
+                "learning_rate": self.config.learning_rate,
+                "embedding_dim": self.config.din_embedding_dim,
+                "seq_max_len": self.config.din_seq_max_len,
+                "attention_hidden_units": self.config.din_attention_hidden_units,
+                "mlp_hidden_units": self.config.din_mlp_hidden_units,
+                "activation": self.config.din_activation,
+                "num_workers": self.config.num_workers,
+                "pin_memory": self.config.pin_memory,
+                "enable_negative_sampling": self.config.enable_negative_sampling,
+                "negative_positive_ratio": (
+                    self.config.negative_positive_ratio
+                    if self.config.enable_negative_sampling
+                    else None
+                ),
+            },
+            "dataset_info": {
+                "train_samples": len(train_dataset) if train_dataset is not None else 0,
+                "val_samples": len(val_dataset) if val_dataset is not None else 0,
+                "user_profile_features": self.user_profile_features,
+                "item_features": self.item_features,
+                "context_features": self.context_features,
+            },
+            "model_architecture": {
+                "user_profile_vocab_size": (
+                    {k: len(v) for k, v in self.model.user_profile_vocab_dict.items()}
+                    if self.model
+                    else {}
+                ),
+                "item_vocab_size": (
+                    {k: len(v) for k, v in self.model.item_vocab_dict.items()}
+                    if self.model
+                    else {}
+                ),
+                "context_vocab_size": (
+                    {k: len(v) for k, v in self.model.context_vocab_dict.items()}
+                    if self.model
+                    else {}
+                ),
+            },
+            "training_results": {
+                "final_train_loss": (
+                    self.loss_history[-1][1] if self.loss_history else None
+                ),
+                "final_val_loss": (
+                    self.val_loss_history[-1][1] if self.val_loss_history else None
+                ),
+            },
+            "validation_metrics": final_metrics if final_metrics else {},
+            "device": "cuda" if torch.cuda.is_available() else "cpu",
+        }
+
+        # Save to JSON
+        log_filename = f"training_log_{timestamp}.json"
+        log_path = os.path.join(log_dir, log_filename)
+        with open(log_path, "w", encoding="utf-8") as f:
+            json.dump(log_data, f, indent=2, ensure_ascii=False)
+
+        print(f"\nTraining log saved to: {log_path}")
+
+        # Also save a "latest" version for easy access
+        latest_log_path = os.path.join(log_dir, "training_log_latest.json")
+        with open(latest_log_path, "w", encoding="utf-8") as f:
+            json.dump(log_data, f, indent=2, ensure_ascii=False)
+
+        print(f"Latest training log saved to: {latest_log_path}")
 
     def predict(self):
         """
